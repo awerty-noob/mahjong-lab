@@ -1,35 +1,42 @@
-.vscode/*
-.idea/*
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.python-version
+uv.lock
+
+# IDE / OS
+.vscode/
+.idea/
 !.idea/watcherTasks.xml
 !.idea/pyinspections.xml
 *.iml
-*.pyc
-build/*
-dist/*
-*.egg-info/*
-venv
-pythonenv*
 .DS_Store
-mahjax.egg-info
-__pycache__
-profile_logs
-fig
-uv.lock
-.python-version
-wandb
+
+# Test / lint / coverage caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Local logs and profiles
+*.log
+logs/
+profile_logs/
+
+# Checkpoints and model weights
 *.ckpt
 *.pkl
-log
-.venv
-*.out
-.venv
-*.sh
-*.o*
-workspace/*
-tenhou
-tests/red_mahjong/assets
-tests/red_mahjong/test_replay.py
-logs/
-data/tenhou/
-params
-offline_data
+params/
+checkpoints/
+
+# Local datasets and calibrated artifacts
+data/
+
+# Local scratch space
+workspace/

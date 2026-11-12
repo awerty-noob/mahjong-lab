@@ -24,7 +24,9 @@ classifiers = [
 dynamic = ["version"]
 dependencies = [
     "fastapi>=0.128.0",
+    "flax>=0.10",
     "jax>=0.4.28",
+    "optax>=0.2",
     "typing-extensions>=4.2.0",
     "uvicorn>=0.39.0",
 ]
@@ -38,7 +40,7 @@ version = { attr = "mahjax.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["mahjax*"]
+include = ["mahjax*", "networks*", "train*"]
 
 [tool.setuptools.package-data]
 "*" = ["*.svg", "*/*.svg"]
@@ -90,7 +92,7 @@ max-complexity = 18
 
 [tool.ruff.lint.isort]
 # The examples import their sibling scripts by name; these sort after mahjax.
-known-local-folder = ["bc", "common", "utils", "networks"]
+known-local-folder = ["bc", "common", "utils", "networks", "train"]
 
 [tool.mypy]
 python_version = "3.11"
