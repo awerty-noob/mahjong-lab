@@ -99,8 +99,10 @@ def test_kita_sets_a_north_aside_and_draws_a_replacement() -> None:
 
 def test_kita_is_not_offered_on_the_haitei_draw_and_in_riichi_only_for_a_drawn_north() -> None:
     state = State()
-    hand = jnp.zeros((3, Tile.NUM_TILE_TYPE_WITH_RED), dtype=jnp.int8).at[0].set(
-        _hand([0, 0, 0, 8, 8, 8, 9, 10, 11, 18, 19, 20, NORTH, 31])
+    hand = (
+        jnp.zeros((3, Tile.NUM_TILE_TYPE_WITH_RED), dtype=jnp.int8)
+        .at[0]
+        .set(_hand([0, 0, 0, 8, 8, 8, 9, 10, 11, 18, 19, 20, NORTH, 31]))
     )
     assert bool(_mask_after_draw(state, hand, jnp.int32(0), jnp.int8(31))[KITA_ACTION])
     haitei = _replace_state(state, is_haitei=jnp.bool_(True))

@@ -31,9 +31,9 @@ from networks.mahjong_3p.configs import (
 from networks.mahjong_3p.feature import POLICY_CONTEXT_SHAPES, build_central_q_input
 from networks.mahjong_3p.network import (
     build_actor,
-    compact_observation,
     build_central_q,
     compact_legal_mask,
+    compact_observation,
     to_simulator_action,
 )
 from networks.mahjong_3p.transformer import clone_actor_and_public_encoder
@@ -1648,9 +1648,7 @@ def _bc_actor(checkpoint, observation, *, debug=False, reading_auxiliary=False):
     # Legacy BC envelopes may omit the head; disabled (version 0) is the only
     # safe legacy default.  Metadata is never promoted to root provenance.
     head = (
-        checkpoint_head_config(checkpoint)
-        if checkpoint.get("head_config") is not None
-        else dict(DISABLED_HEAD_CONFIG)
+        checkpoint_head_config(checkpoint) if checkpoint.get("head_config") is not None else dict(DISABLED_HEAD_CONFIG)
     )
     reading = _checked_bc_reading(checkpoint, network_config, reading_auxiliary)
     # Size and head schema come from the authenticated BC root, never a preset
@@ -2006,10 +2004,8 @@ def load_vrpo_actor(checkpoint, observation):
     return model, checked_parameters(actor, abstract)
 
 
-# Legacy re-exports used by the ported test-suite.
-from networks.mahjong_3p.network import (  # noqa: E402
-    adapt_network_observation,
-    build_actor,
+# Re-exports used by tests.
+from networks.mahjong_3p.network import (  # noqa: E402, F401
     get_central_q_network_cls,
     get_network_cls,
 )

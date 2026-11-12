@@ -44,6 +44,7 @@ def hand_counts_to_idx(counts: Array, fill: int = -1, hand_size: int = 14) -> Ar
     out = jnp.where(out == fill, fill, out).astype(jnp.int32)
     return out
 
+
 def _observe_dict(state: State) -> Dict[str, Array]:
     """Observation for the current player. Every field is either the current
     player's own private information or public information; nothing here is
@@ -171,12 +172,12 @@ def _observe_dict(state: State) -> Dict[str, Array]:
     # action histories
     player_history = state.round_state.action_history[0, :].astype(jnp.int32)  # (200,)
     valid_history = player_history >= 0  # default value is -1, so we need to mask it
-    relative_player_history = jnp.mod(player_history - jnp.int32(c_p), 4).astype(
+    relative_player_history = jnp.mod(
+        player_history - jnp.int32(c_p), 4
+    ).astype(
         state.round_state.action_history.dtype
     )  # translate the player index to the relative index. e.g. if the original player index is 1, and the current player index is 3, then the relative player index is 2.
-    relative_player_history = jnp.where(
-        valid_history, relative_player_history, state.round_state.action_history[0, :]
-    )
+    relative_player_history = jnp.where(valid_history, relative_player_history, state.round_state.action_history[0, :])
     action_history = state.round_state.action_history.at[0, :].set(relative_player_history)
     # game features
     # Derived here, not cached: as a RoundState field every round-construction path had
@@ -193,17 +194,14 @@ def _observe_dict(state: State) -> Dict[str, Array]:
     # ``can_ron`` is structurally False. Unconditional then masked, same lax.cond trap
     # as above. Not cached in state: (34,34) per player, derivable from the hand.
     _cand = jnp.maximum(hand_c_p_34[None, :] - jnp.eye(Tile.NUM_TILE_TYPE, dtype=hand_c_p_34.dtype), 0)
-    _dcw = jax.vmap(
-        lambda h: jax.vmap(lambda u: Hand.can_ron(h, u))(jnp.arange(Tile.NUM_TILE_TYPE))
-    )(_cand)
+    _dcw = jax.vmap(lambda h: jax.vmap(lambda u: Hand.can_ron(h, u))(jnp.arange(Tile.NUM_TILE_TYPE)))(_cand)
 
     # Discard actions are 0..36; 37..70 are self-kan, so the slice stops at 37.
     # ``~state.terminated`` is load-bearing: ``step`` replaces the mask with all-True on
     # termination, which would otherwise report every terminal observation as a discard
     # node while ``discard_shanten`` describes a hand nobody will play.
     is_discard_node = ~state.terminated & (
-        state.legal_action_mask[:NUM_TILE_TYPES_WITH_RED].any()
-        | state.legal_action_mask[Action.TSUMOGIRI]
+        state.legal_action_mask[:NUM_TILE_TYPES_WITH_RED].any() | state.legal_action_mask[Action.TSUMOGIRI]
     )
     # -1 means "no answer here": either not a discard node, or a tile the hand does
     # not hold so there is nothing to discard. Signed, so -1 stays distinct from a
@@ -220,12 +218,8 @@ def _observe_dict(state: State) -> Dict[str, Array]:
     # legitimately keeps their rinshan).
     # ``~state.terminated`` guards BOTH terms: ``step`` sets the mask all-True on
     # termination, so an unguarded TSUMO bit would re-expose the tile this mask hides.
-    observer_holds_draw = ~state.terminated & (
-        is_discard_node | state.legal_action_mask[Action.TSUMO]
-    )
-    last_draw = jnp.where(
-        observer_holds_draw, state.round_state.last_draw, jnp.int8(-1)
-    ).astype(jnp.int8)
+    observer_holds_draw = ~state.terminated & (is_discard_node | state.legal_action_mask[Action.TSUMO])
+    last_draw = jnp.where(observer_holds_draw, state.round_state.last_draw, jnp.int8(-1)).astype(jnp.int8)
     furiten = state.players.furiten_by_discard[c_p] | state.players.furiten_by_pass[c_p]
     # The tile a pending call/ron is about, and who let it go. Relative seat, same
     # convention as the history's player channel.
@@ -325,9 +319,7 @@ def _observe_dict(state: State) -> Dict[str, Array]:
     # ``next - last`` form used inside the draw path, which is deliberately off by one
     # because it runs before ``next_deck_ix`` is decremented.
     wall_remaining = jnp.maximum(
-        state.round_state.next_deck_ix.astype(jnp.int32)
-        - state.round_state.last_deck_ix.astype(jnp.int32)
-        + 1,
+        state.round_state.next_deck_ix.astype(jnp.int32) - state.round_state.last_deck_ix.astype(jnp.int32) + 1,
         0,
     )
     prevalent_wind = jnp.int8(state.round_state.round // 4)
@@ -403,6 +395,7 @@ def _observe_privileged_dict(state: State) -> Dict[str, Array]:
         .set(state.players.hand_with_red[others][:, Tile.NUM_TILE_TYPE : NUM_TILE_TYPES_WITH_RED] > 0)
     )
     return obs
+
 
 def _observe_privileged_2D(state: State) -> None:
     """

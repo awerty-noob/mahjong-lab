@@ -26,7 +26,7 @@ LABELS = {
 TEXT_STYLE = (
     "font-family=\"'Noto Serif', 'Noto Serif JP', 'Yu Mincho', "
     "'Hiragino Mincho ProN', Georgia, serif\" "
-    "font-size=\"14.6\" font-weight=\"700\""
+    'font-size="14.6" font-weight="700"'
 )
 TEXT_X = 3.5
 TEXT_Y = 15.1
@@ -135,7 +135,7 @@ def build_motif_markup(name: str) -> str:
                 raise ValueError(f"{name}: a <path> without a d attribute")
             path_d = d.group(1)
             # The path keeps its own colour and mask.
-            attrs = re.sub(r'\s(?:d|vector-effect)="[^"]*"', "", tag[len("<path"):]).rstrip("/>").rstrip()
+            attrs = re.sub(r'\s(?:d|vector-effect)="[^"]*"', "", tag[len("<path") :]).rstrip("/>").rstrip()
             kept_tags.append(f'<path d="{path_d}"{attrs} vector-effect="non-scaling-stroke"/>')
         if kept_tags:
             chunks.append(f"{group_open}{''.join(kept_tags)}</g>")
@@ -164,11 +164,7 @@ def main() -> None:
 
         motif_markup = build_motif_markup(name)
         label, color = label_for(name)
-        text_svg = (
-            f'<text x="{TEXT_X}" y="{TEXT_Y}" {TEXT_STYLE} fill="{color}">{label}</text>'
-            if label
-            else ""
-        )
+        text_svg = f'<text x="{TEXT_X}" y="{TEXT_Y}" {TEXT_STYLE} fill="{color}">{label}</text>' if label else ""
         motif_svg = ""
         if motif_markup:
             path_list = re.findall(r'<path d="([^"]+)"', motif_markup)
@@ -180,13 +176,8 @@ def main() -> None:
             height = max_y - min_y
             pad_x = max(MOTIF_MIN_PAD, width * MOTIF_PAD_RATIO)
             pad_y = max(MOTIF_MIN_PAD, height * MOTIF_PAD_RATIO)
-            motif_view_box = (
-                f"{min_x - pad_x:.3f} {min_y - pad_y:.3f} "
-                f"{width + pad_x * 2:.3f} {height + pad_y * 2:.3f}"
-            )
-            x, y, width_box, height_box = (
-                LARGE_BOX if name in {"rd.svg", "gd.svg"} else STANDARD_BOX
-            )
+            motif_view_box = f"{min_x - pad_x:.3f} {min_y - pad_y:.3f} {width + pad_x * 2:.3f} {height + pad_y * 2:.3f}"
+            x, y, width_box, height_box = LARGE_BOX if name in {"rd.svg", "gd.svg"} else STANDARD_BOX
             motif_svg = (
                 f'<svg x="{x}" y="{y}" width="{width_box}" height="{height_box}" '
                 f'viewBox="{motif_view_box}" overflow="visible" '

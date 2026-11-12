@@ -206,11 +206,21 @@ def model_reading_config(model: Any) -> dict:
     return validate_reading_config(getattr(model, "reading_config", None))
 
 
-_FEATURE_EXPORTS = {"PLAYER_FIELDS", "ROUND_FIELDS", "STATE_FIELDS",
-                    "assemble_central_q_input", "build_central_q_input",
-                    "build_privileged_q_state"}
-_NETWORK_EXPORTS = {"build_actor", "build_central_q", "get_network_cls",
-                    "get_central_q_network_cls", "adapt_network_observation"}
+_FEATURE_EXPORTS = {
+    "PLAYER_FIELDS",
+    "ROUND_FIELDS",
+    "STATE_FIELDS",
+    "assemble_central_q_input",
+    "build_central_q_input",
+    "build_privileged_q_state",
+}
+_NETWORK_EXPORTS = {
+    "build_actor",
+    "build_central_q",
+    "get_network_cls",
+    "get_central_q_network_cls",
+    "adapt_network_observation",
+}
 
 
 def __getattr__(name):

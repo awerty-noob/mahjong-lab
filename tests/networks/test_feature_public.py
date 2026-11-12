@@ -9,23 +9,32 @@ from mahjax.common.logic import _append_action_history
 from mahjax.common.meld import Meld
 from mahjax.common.shanten import Shanten
 from mahjax.common.tile import River
-from mahjax.mahjong_3p.observation import _observe_dict
 from mahjax.mahjong_3p.action import Action
-from networks.mahjong_3p.feature import COMPACT_TO_CANONICAL, SELF_KAN_OFFSET, augment_observation
-from networks.mahjong_3p.network import compact_legal_mask, compact_observation
+from mahjax.mahjong_3p.observation import _observe_dict
 from mahjax.mahjong_3p.state import default_state
 
-from networks.mahjong_3p.feature import _candidate_ukeire
+from networks.mahjong_3p.feature import COMPACT_TO_CANONICAL, SELF_KAN_OFFSET, _candidate_ukeire, augment_observation
+from networks.mahjong_3p.network import compact_legal_mask, compact_observation
 
 BASE = jax.jit(lambda state: compact_observation(_observe_dict(state)))
 AUGMENT = jax.jit(augment_observation)
 NUMBER = jax.jit(Shanten.number)
 HAND = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15, 15, 0]
 V3_KEYS = {
-    "feature_version", "candidate_valid", "candidate_shanten", "candidate_ukeire",
-    "candidate_ukeire_types", "candidate_ukeire_count", "dora_count",
-    "public_history_complete", "riichi_declaration_tile", "riichi_declaration_index",
-    "riichi_elapsed", "discard_counts", "post_riichi_discard_counts", "genbutsu",
+    "feature_version",
+    "candidate_valid",
+    "candidate_shanten",
+    "candidate_ukeire",
+    "candidate_ukeire_types",
+    "candidate_ukeire_count",
+    "dora_count",
+    "public_history_complete",
+    "riichi_declaration_tile",
+    "riichi_declaration_index",
+    "riichi_elapsed",
+    "discard_counts",
+    "post_riichi_discard_counts",
+    "genbutsu",
 }
 
 
@@ -58,7 +67,7 @@ def state_with_hand(tiles=HAND, *, melds=()):
 def with_history(state, events, *, riichi=(False, False, False)):
     history = jnp.full((3, 200), -1, dtype=jnp.int8)
     if events:
-        history = history.at[:, :len(events)].set(jnp.asarray(events, dtype=jnp.int8).T)
+        history = history.at[:, : len(events)].set(jnp.asarray(events, dtype=jnp.int8).T)
     return state.replace(
         players=state.players.replace(riichi=jnp.asarray(riichi)),
         round_state=state.round_state.replace(action_history=history, round_step=jnp.int32(len(events))),
@@ -103,6 +112,7 @@ def assert_candidate_reference(state, obs):
         assert int(obs["candidate_ukeire_types"][discard]) == int(np.count_nonzero(expected))
         assert int(obs["candidate_ukeire_count"][discard]) == int(expected.sum())
 
+
 def test_opt_in_api_preserves_every_v2_key_and_reuses_base():
     state = state_with_hand()
     base = BASE(state)
@@ -133,13 +143,16 @@ def test_every_legal_candidate_including_worse_shanten_has_exact_weighted_ukeire
     assert np.all(np.asarray(obs["candidate_ukeire"])[~valid] == -1)
 
 
-@pytest.mark.parametrize("tiles,melds", [
-    ([0, 0, 1, 1, 2, 2, 10, 10, 11, 11, 19, 19, 20, 21], ()),
-    ([0, 1, 2, 10, 11, 19, 20, 21, 22, 23, 24, 25, 26, 0], ()),
-    ([2, 3, 4, 5, 6, 7, 11, 12, 15, 15, 0], (Meld.init(Action.PON, 20, 1),)),
-    ([2, 3, 4, 5, 6, 7, 11, 12, 15, 15, 0], (Meld.init(SELF_KAN_OFFSET + 20, 20, 0),)),
-    ([0, 0, 0, 0, 2, 3, 4, 11, 12, 13, 20, 20, 21, 21], ()),
-])
+@pytest.mark.parametrize(
+    "tiles,melds",
+    [
+        ([0, 0, 1, 1, 2, 2, 10, 10, 11, 11, 19, 19, 20, 21], ()),
+        ([0, 1, 2, 10, 11, 19, 20, 21, 22, 23, 24, 25, 26, 0], ()),
+        ([2, 3, 4, 5, 6, 7, 11, 12, 15, 15, 0], (Meld.init(Action.PON, 20, 1),)),
+        ([2, 3, 4, 5, 6, 7, 11, 12, 15, 15, 0], (Meld.init(SELF_KAN_OFFSET + 20, 20, 0),)),
+        ([0, 0, 0, 0, 2, 3, 4, 11, 12, 13, 20, 20, 21, 21], ()),
+    ],
+)
 def test_special_shapes_melds_and_four_copy_boundary_match_scalar_reference(tiles, melds):
     state = state_with_hand(tiles, melds=melds)
     assert_candidate_reference(state, augmented(state))
@@ -190,7 +203,9 @@ def test_response_and_terminal_candidates_are_unknown(action):
 
 def test_public_indicators_use_sanma_cycles_red_folding_and_multiplicity():
     state = state_with_hand()
-    for indicator, expected in enumerate([1, 0, 3, 4, 5, 6, 7, 8, 9, 10, 2, 12, 13, 14, 15, 16, 17, 18, 19, 11, 21, 22, 23, 20, 25, 26, 24]):
+    for indicator, expected in enumerate(
+        [1, 0, 3, 4, 5, 6, 7, 8, 9, 10, 2, 12, 13, 14, 15, 16, 17, 18, 19, 11, 21, 22, 23, 20, 25, 26, 24]
+    ):
         base = dict(BASE(state), dora_indicators=jnp.array([indicator, -1, -1, -1, -1], jnp.int8))
         # Response path avoids a new candidate scan for this indicator-only test.
         base["is_discard_node"] = jnp.bool_(False)
@@ -209,9 +224,15 @@ def test_public_indicators_use_sanma_cycles_red_folding_and_multiplicity():
 
 def test_declaration_uses_following_red_discard_not_riichi_action_and_counts_only_discards():
     events = [
-        (1, 20, 0), (2, 6, 0), (1, Action.RIICHI, -1),
-        (1, 28, 1), (2, Action.PON, -1), (2, 7, 0),
-        (0, Action.KITA, -1), (0, 23, 0), (1, 29, 1),
+        (1, 20, 0),
+        (2, 6, 0),
+        (1, Action.RIICHI, -1),
+        (1, 28, 1),
+        (2, Action.PON, -1),
+        (2, 7, 0),
+        (0, Action.KITA, -1),
+        (0, 23, 0),
+        (1, 29, 1),
     ]
     state = with_history(state_with_hand(), events, riichi=(False, True, False))
     obs = augmented(state)
@@ -280,7 +301,13 @@ def test_history_overflow_is_explicit_unknown_and_legacy_full_buffers_are_conser
     state = state.replace(round_state=state.round_state.replace(history_overflow=jnp.bool_(True)))
     obs = augmented(state)
     assert not bool(obs["public_history_complete"])
-    for key in ("riichi_declaration_tile", "riichi_declaration_index", "riichi_elapsed", "discard_counts", "post_riichi_discard_counts"):
+    for key in (
+        "riichi_declaration_tile",
+        "riichi_declaration_index",
+        "riichi_elapsed",
+        "discard_counts",
+        "post_riichi_discard_counts",
+    ):
         assert np.all(np.asarray(obs[key]) == -1), key
     assert bool(obs["genbutsu"][1, 6])  # provable own-history lower bound
     events = [(i % 3, 20, 0) for i in range(200)]
@@ -315,7 +342,8 @@ def test_public_visibility_accounts_for_called_discards_melds_kita_and_indicator
     melds = state.players.melds.at[2, 0].set(Meld.init(Action.PON_RED, 13, 1))
     state = state.replace(
         players=state.players.replace(
-            river=river, melds=melds,
+            river=river,
+            melds=melds,
             kita=state.players.kita.at[1].set(1),
         ),
         round_state=state.round_state.replace(dora_indicators=jnp.array([7, -1, -1, -1, -1], jnp.int8)),
@@ -355,7 +383,14 @@ def test_jit_vmap_matches_single_lane_and_preserves_conditional_scan():
     assert np.all(np.asarray(obs["candidate_ukeire"])[1] == -1)
     # Structural guard: cache work remains inside a cond, and batching uses scan
     # rather than a select that broadcasts the entire cache across batch lanes.
-    args = (base["hand"], single["candidate_shanten"], single["candidate_valid"], base["tiles_seen"], jnp.int32(0), jnp.bool_(False))
+    args = (
+        base["hand"],
+        single["candidate_shanten"],
+        single["candidate_valid"],
+        base["tiles_seen"],
+        jnp.int32(0),
+        jnp.bool_(False),
+    )
     assert "cond[" in str(jax.make_jaxpr(_candidate_ukeire)(*args))
     batched_args = jax.tree.map(lambda a: jnp.stack([a, a]), args)
     assert "scan[" in str(jax.make_jaxpr(jax.vmap(_candidate_ukeire))(*batched_args))

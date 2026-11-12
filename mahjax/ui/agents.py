@@ -194,9 +194,7 @@ class AgentRegistry:
         first: bool = False,
     ) -> Agent:
         mod = importlib.import_module(module)
-        return self._add_loaded(
-            getattr(mod, attribute), name or attribute, env_ids, description, first
-        )
+        return self._add_loaded(getattr(mod, attribute), name or attribute, env_ids, description, first)
 
     def load_callable_from_path(
         self,
@@ -213,9 +211,7 @@ class AgentRegistry:
             raise ImportError(f"Cannot import module from {file_path}")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        return self._add_loaded(
-            getattr(module, attribute), name or attribute, env_ids, description, first
-        )
+        return self._add_loaded(getattr(module, attribute), name or attribute, env_ids, description, first)
 
     def _add_loaded(
         self,

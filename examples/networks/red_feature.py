@@ -123,18 +123,19 @@ class ObservationTokenizer(nn.Module):
         stable against reordering and lets each table say what it is.
         """
         D = self.D_MODEL
+
         def emb(n):
             return nn.Embed(n, D, embedding_init=orthogonal_init())
 
         # Shared across segments.
-        self.tile_emb = emb(NUM_TILE_TYPE + 1)      # row 0 = "no tile", type t at t+1
-        self.type_emb = emb(NUM_TOKEN_TYPES)        # which segment a token belongs to
+        self.tile_emb = emb(NUM_TILE_TYPE + 1)  # row 0 = "no tile", type t at t+1
+        self.type_emb = emb(NUM_TOKEN_TYPES)  # which segment a token belongs to
         self.seat_emb = emb(NUM_PLAYERS)
         self.action_emb = emb(self.NUM_ACTIONS + 1)  # melds and history, -1 -> row 0
 
         # Hand segment, per tile type.
-        self.count_emb = emb(5)                      # 0..4 copies held
-        self.red_emb = emb(2)                        # holds the red five of this type
+        self.count_emb = emb(5)  # 0..4 copies held
+        self.red_emb = emb(2)  # holds the red five of this type
         self.discard_shanten_emb = emb(3 * SHANTEN_VOCAB)  # 3 decompositions x 15 rows
         self.can_win_emb = emb(2)
         self.last_draw_emb = emb(2)
@@ -151,7 +152,7 @@ class ObservationTokenizer(nn.Module):
 
         # History segment.
         self.actor_emb = emb(NUM_PLAYERS + 1)
-        self.tsumogiri_emb = emb(3)                  # -1/0/1 -> row 0/1/2
+        self.tsumogiri_emb = emb(3)  # -1/0/1 -> row 0/1/2
         self.pos_emb = emb(MAX_HISTORY_LENGTH)
 
         # Projections.
@@ -169,8 +170,7 @@ class ObservationTokenizer(nn.Module):
         hist_tok, hist_mask = self._history_tokens(obs, B, D)
 
         glob_tok = jnp.broadcast_to(
-            self.type_emb(jnp.full((1,), TOK_GLOB))[None]
-            + self.globals_proj(globals_vec)[:, None, :],
+            self.type_emb(jnp.full((1,), TOK_GLOB))[None] + self.globals_proj(globals_vec)[:, None, :],
             (B, self.NUM_GLOBAL_TOKENS, D),
         )
 
@@ -179,13 +179,29 @@ class ObservationTokenizer(nn.Module):
 
         ones = jnp.ones((B, 1), jnp.float32)
         tokens = jnp.concatenate(
-            [cls(TOK_CLS_HAND), hand_tok, cls(TOK_CLS_MELD), meld_tok,
-             cls(TOK_CLS_HIST), hist_tok, cls(TOK_CLS_GLOB), glob_tok],
+            [
+                cls(TOK_CLS_HAND),
+                hand_tok,
+                cls(TOK_CLS_MELD),
+                meld_tok,
+                cls(TOK_CLS_HIST),
+                hist_tok,
+                cls(TOK_CLS_GLOB),
+                glob_tok,
+            ],
             axis=1,
         )
         mask = jnp.concatenate(
-            [ones, hand_mask, ones, meld_mask, ones, hist_mask,
-             ones, jnp.ones((B, self.NUM_GLOBAL_TOKENS), jnp.float32)],
+            [
+                ones,
+                hand_mask,
+                ones,
+                meld_mask,
+                ones,
+                hist_mask,
+                ones,
+                jnp.ones((B, self.NUM_GLOBAL_TOKENS), jnp.float32),
+            ],
             axis=1,
         )
         return tokens * mask[..., None], mask
@@ -217,12 +233,8 @@ class ObservationTokenizer(nn.Module):
         # decomposition its own table, so "2 away by seven pairs" and "2 away
         # normally" are different vectors. Row 14 IS the not-held marker, which is
         # why no separate in-hand flag is needed any more.
-        ds = jnp.clip(
-            _batch(obs["discard_shanten"], base_ndim=2).astype(jnp.int32), 0, NOT_IN_HAND
-        )
-        ds_tok = self.discard_shanten_emb(
-            ds + jnp.arange(3, dtype=jnp.int32) * SHANTEN_VOCAB
-        ).sum(axis=-2)
+        ds = jnp.clip(_batch(obs["discard_shanten"], base_ndim=2).astype(jnp.int32), 0, NOT_IN_HAND)
+        ds_tok = self.discard_shanten_emb(ds + jnp.arange(3, dtype=jnp.int32) * SHANTEN_VOCAB).sum(axis=-2)
 
         # (B,34,34) in {-1,0,1}. Only >0 counts as a wait; -1 and 0 both contribute
         # nothing to the bag, so the null case needs no separate branch.
@@ -235,22 +247,14 @@ class ObservationTokenizer(nn.Module):
         # last_draw is -1 when the observer holds no draw; to_type keeps -1, and no
         # tile index equals -1, so the flag is all-zero in that case.
         draw_type = self.to_type(_batch(obs["last_draw"], base_ndim=0).astype(jnp.int32))
-        is_last_draw = (
-            jnp.arange(NUM_TILE_TYPE)[None, :] == draw_type[:, None]
-        ).astype(jnp.int32)
+        is_last_draw = (jnp.arange(NUM_TILE_TYPE)[None, :] == draw_type[:, None]).astype(jnp.int32)
 
         # Hand-wide scalars, added to all 34 tokens so each tile is read in the
         # context of the hand holding it.
         whole = (
-            self.shanten_emb(
-                jnp.clip(_batch(obs["shanten_count"], base_ndim=0).astype(jnp.int32), -1, 8) + 1
-            )
-            + self.furiten_emb(
-                _batch(obs["furiten"], base_ndim=0).astype(jnp.int32)
-            )
-            + self.discard_node_emb(
-                _batch(obs["is_discard_node"], base_ndim=0).astype(jnp.int32)
-            )
+            self.shanten_emb(jnp.clip(_batch(obs["shanten_count"], base_ndim=0).astype(jnp.int32), -1, 8) + 1)
+            + self.furiten_emb(_batch(obs["furiten"], base_ndim=0).astype(jnp.int32))
+            + self.discard_node_emb(_batch(obs["is_discard_node"], base_ndim=0).astype(jnp.int32))
         )[:, None, :]
 
         tok = (
@@ -263,9 +267,7 @@ class ObservationTokenizer(nn.Module):
             + self.count_emb(jnp.clip(counts, 0, 4))
             + self.red_emb(jnp.clip(reds, 0, 1))
             + ds_tok
-            + self.can_win_emb(
-                _batch(obs["can_win"], base_ndim=1).astype(jnp.int32)
-            )
+            + self.can_win_emb(_batch(obs["can_win"], base_ndim=1).astype(jnp.int32))
             # Per-discard wait, as a BAG OF TILES on the token for the discard itself:
             # token t gets the sum of the embeddings of the tiles it would leave me
             # waiting on. A separate table from ``tile_emb`` on purpose -- "I am tile t"
@@ -339,7 +341,8 @@ class ObservationTokenizer(nn.Module):
             # index would imply an ordering that is not there.
             jax.nn.one_hot(
                 b(obs["last_player"], base_ndim=0).astype(jnp.int32) + 1,
-                NUM_PLAYERS + 1, dtype=jnp.float32,
+                NUM_PLAYERS + 1,
+                dtype=jnp.float32,
             ),
         ]
         # ``target`` grounds PON/CHI/RON/PASS and is genuinely table state -- it is a

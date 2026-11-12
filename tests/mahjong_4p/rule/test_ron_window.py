@@ -8,6 +8,7 @@ hold one of these hands, and are asked in turn order from P3, so P0 goes first:
     P   4p4p 7p8p9p ...   pons 4p but cannot ron it
     N   7p8p9p x2 ...     does nothing with 4p
 """
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -95,9 +96,7 @@ def open_window(p0, p1, p2, *, env=("single", "auto"), **kwargs):
 def mangan(state):
     """Every ron on the window is worth 5 han 30 fu, so the payments are exact."""
     return state.replace(
-        players=state.players.replace(
-            fan=state.players.fan.at[:, 0].set(5), fu=state.players.fu.at[:, 0].set(30)
-        )
+        players=state.players.replace(fan=state.players.fan.at[:, 0].set(5), fu=state.players.fu.at[:, 0].set(30))
     )
 
 

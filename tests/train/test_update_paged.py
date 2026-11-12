@@ -1,4 +1,5 @@
 """CPU-only page/flat numerical oracles and post-warmup zero-retrace proofs."""
+
 from collections import Counter
 from dataclasses import replace
 from functools import wraps
@@ -27,29 +28,41 @@ def paged(flat, page_rows, *, interleave=True):
     """Test-only repack. Production must NEVER flatten/transfer feature payloads."""
     lengths = np.asarray(flat.game_lengths)
     offsets = np.asarray(flat.game_offsets)
-    order = ([(g, t) for t in range(int(lengths.max())) for g in range(len(lengths)) if t < lengths[g]]
-             if interleave else [(g, t) for g in range(len(lengths)) for t in range(lengths[g])])
+    order = (
+        [(g, t) for t in range(int(lengths.max())) for g in range(len(lengths)) if t < lengths[g]]
+        if interleave
+        else [(g, t) for g in range(len(lengths)) for t in range(lengths[g])]
+    )
     pages, directory = [], []
     for start in range(0, len(order), page_rows):
-        part = order[start:start + page_rows]
+        part = order[start : start + page_rows]
         count = len(part)
         valid = jnp.arange(page_rows) < count
         idx = jnp.asarray([int(offsets[g] + t) for g, t in part] + [0] * (page_rows - count))
         borrowed = jax.tree.map(lambda x: x[idx], flat.transitions)
-        raw = jax.tree.map(lambda x: jnp.where(valid.reshape((page_rows,) + (1,) * (x.ndim - 1)),
-                                                x, jnp.zeros_like(x)), borrowed)
-        raw = raw._replace(observation=borrowed.observation,
-                           critic_observation=borrowed.critic_observation)
+        raw = jax.tree.map(
+            lambda x: jnp.where(valid.reshape((page_rows,) + (1,) * (x.ndim - 1)), x, jnp.zeros_like(x)), borrowed
+        )
+        raw = raw._replace(observation=borrowed.observation, critic_observation=borrowed.critic_observation)
         ids = jnp.asarray([g for g, _ in part] + [-1] * (page_rows - count), jnp.int32)
         steps = jnp.asarray([t for _, t in part] + [-1] * (page_rows - count), jnp.int32)
         pages.append(RawQPage(raw, ids, steps))
         directory.append(tuple(sorted(set(g for g, _ in part))))
-    actors = int(np.asarray(jnp.sum(flat.transitions.executed & flat.transitions.is_learner
-                                     & flat.transitions.is_decision)))
+    actors = int(
+        np.asarray(jnp.sum(flat.transitions.executed & flat.transitions.is_learner & flat.transitions.is_decision))
+    )
     resident = sum(1024 + sum(int(x.nbytes) + 256 for x in jax.tree.leaves(p)) for p in pages)
     resident += 4096 + int(lengths.size) * 32 + sum(256 + 4 * len(ids) for ids in directory)
-    return PagedRawQBatch(tuple(pages), flat.game_lengths, flat.learner_seats, tuple(directory),
-                         page_rows, int(lengths.sum()), actors, resident)
+    return PagedRawQBatch(
+        tuple(pages),
+        flat.game_lengths,
+        flat.learner_seats,
+        tuple(directory),
+        page_rows,
+        int(lengths.sum()),
+        actors,
+        resident,
+    )
 
 
 def unpage(batch, values):
@@ -79,17 +92,34 @@ def extend(flat, extra):
 def forced(flat):
     raw = flat.transitions
     law = jax.nn.one_hot(raw.action, 87, dtype=jnp.float32)
-    return flat._replace(transitions=raw._replace(action_mask=law.astype(jnp.bool_),
-                                                  behavior_probs=law,
-                                                  is_decision=jnp.zeros_like(raw.is_decision)))
+    return flat._replace(
+        transitions=raw._replace(
+            action_mask=law.astype(jnp.bool_), behavior_probs=law, is_decision=jnp.zeros_like(raw.is_decision)
+        )
+    )
 
 
 def setup(**overrides):
-    cfg = tiny_debug_preset(**(dict(optimizer="muon", execution_block_steps=2, storage_page_rows=6,
-                                    actor_microbatch_size=2, critic_microbatch_size=3,
-                                    inference_microbatch_size=2, actor_epochs=2, critic_epochs=1,
-                                    actor_lr=.003, critic_lr=.004, weight_decay=.1,
-                                    target_kl=10., time_bucket=2) | overrides))
+    cfg = tiny_debug_preset(
+        **(
+            dict(
+                optimizer="muon",
+                execution_block_steps=2,
+                storage_page_rows=6,
+                actor_microbatch_size=2,
+                critic_microbatch_size=3,
+                inference_microbatch_size=2,
+                actor_epochs=2,
+                critic_epochs=1,
+                actor_lr=0.003,
+                critic_lr=0.004,
+                weight_decay=0.1,
+                target_kl=10.0,
+                time_bucket=2,
+            )
+            | overrides
+        )
+    )
     net = TinyCentral()
     obs = {"x": jnp.ones((2, 6)), "row_id": jnp.arange(2)}
     central = {"observation": obs, "privileged": {"hidden": jnp.ones((2, 2))}}
@@ -129,11 +159,17 @@ def test_page_q_old_and_behavior_targets_equal_full_raw_trace():
     extended = extend(flat, 17)
     try:
         q = updater.old_q(state, batch)
-        expected_q = net.apply(phase_params(state.params, "critic"), public_q_input(extended.transitions),
-                               method=net.get_action_q)
+        expected_q = net.apply(
+            phase_params(state.params, "critic"), public_q_input(extended.transitions), method=net.get_action_q
+        )
         np.testing.assert_allclose(unpage(batch, q), expected_q, atol=2e-6, rtol=2e-6)
-        labels = qboost_labels(extended.transitions, expected_q, game_offsets=extended.game_offsets,
-                               game_lengths=extended.game_lengths, trace_lambda=cfg.trace_lambda)
+        labels = qboost_labels(
+            extended.transitions,
+            expected_q,
+            game_offsets=extended.game_offsets,
+            game_lengths=extended.game_lengths,
+            trace_lambda=cfg.trace_lambda,
+        )
         targets = updater.targets(batch, q)
         np.testing.assert_allclose(unpage(batch, targets), labels.targets, atol=3e-6, rtol=3e-6)
         assert len(q) > 3 and batch.raw_count == int(extended.game_lengths.sum())
@@ -149,26 +185,27 @@ def test_current_trace_recomputed_for_each_actor_step_and_q_old_frozen(monkeypat
     before_q = tuple(np.asarray(x).copy() for x in q)
     calls, current_laws = [], []
     original = updater.actor_minibatch
+
     def tracked(params, *args, **kwargs):
         calls.append(jax.device_get(phase_params(params, "actor")))
         return original(params, *args, **kwargs)
+
     monkeypatch.setattr(updater, "actor_minibatch", tracked)
     original_law = updater.current_law
+
     def law(params, page, selected):
         value = original_law(params, page, selected)
         current_laws.append(np.asarray(value))
         # Foreign acting laws are byte-frozen, not replaced by learner policy.
-        frozen = np.asarray(page.transitions.executed
-                            & (~page.transitions.is_learner | ~page.transitions.is_decision))
-        np.testing.assert_array_equal(np.asarray(value)[frozen],
-                                      np.asarray(page.transitions.behavior_probs)[frozen])
+        frozen = np.asarray(page.transitions.executed & (~page.transitions.is_learner | ~page.transitions.is_decision))
+        np.testing.assert_array_equal(np.asarray(value)[frozen], np.asarray(page.transitions.behavior_probs)[frozen])
         return value
+
     monkeypatch.setattr(updater, "current_law", law)
     try:
         result = updater.update(state, jax.random.key(942), batch, q_old=q)
         assert len(calls) == result.metrics["actor_steps"] == 4
-        assert any(not np.array_equal(a, b) for a, b in zip(jax.tree.leaves(calls[0]),
-                                                           jax.tree.leaves(calls[1])))
+        assert any(not np.array_equal(a, b) for a, b in zip(jax.tree.leaves(calls[0]), jax.tree.leaves(calls[1])))
         assert current_laws
         for old, new in zip(before_q, q, strict=True):
             np.testing.assert_array_equal(old, new)
@@ -230,8 +267,10 @@ def test_admission_and_nonfinite_failure_leave_prior_boundary_unchanged():
 def test_layout_rejected_before_certificate_jit_and_understated_ledger_cannot_bypass(monkeypatch):
     net, cfg, state, flat = setup()
     batch = paged(flat, cfg.page_rows)
+
     def forbidden(*args, **kwargs):
         pytest.fail("undeclared P/G must fail before certificate compilation")
+
     with monkeypatch.context() as local:
         local.setattr("train.update.validate_paged_batch", forbidden)
         updater = PagedVRPOUpdater(net, cfg)
@@ -273,20 +312,24 @@ def trace_counter(monkeypatch):
     """Count Python executions while jax.jit traces, not merely host LRU entries."""
     counts = Counter()
     original = jax.jit
+
     def tracked(fun=None, **kwargs):
         if fun is None:
             return lambda fn: tracked(fn, **kwargs)
+
         @wraps(fun)
         def traced(*args, **kw):
             counts[(fun.__module__, fun.__qualname__)] += 1
             return fun(*args, **kw)
+
         return original(traced, **kwargs)
+
     monkeypatch.setattr(jax, "jit", tracked)
     return counts
 
 
 def test_more_than_eight_runtime_shapes_have_zero_new_misses_evictions_or_traces(monkeypatch):
-    net, cfg, state, flat = setup(actor_epochs=1, bc_reference_coef=.03)
+    net, cfg, state, flat = setup(actor_epochs=1, bc_reference_coef=0.03)
     # All materialization is BEFORE tracing instrumentation. Runtime totals,
     # maximum game length, Actor counts and page tuple lengths vary, P/G do not.
     batches = [paged(extend(flat, extra), cfg.page_rows) for extra in range(10)]
@@ -333,10 +376,12 @@ def test_same_own_boundary_replay_is_exact():
 def test_allseat_joint_update_matches_flat_and_uses_every_action_seats_advantage():
     net, cfg, state, flat = setup(actor_epochs=1, muon_ns_steps=1, muon_ns_dtype="float32")
     raw = flat.transitions
-    law = jax.nn.softmax(jnp.where(raw.action_mask,
-        net.apply(state.params, raw.observation, method=net.get_action_logits), -1e30), -1)
-    raw = raw._replace(is_learner=jnp.ones_like(raw.is_learner), policy_id=jnp.zeros_like(raw.policy_id),
-                       behavior_probs=law)
+    law = jax.nn.softmax(
+        jnp.where(raw.action_mask, net.apply(state.params, raw.observation, method=net.get_action_logits), -1e30), -1
+    )
+    raw = raw._replace(
+        is_learner=jnp.ones_like(raw.is_learner), policy_id=jnp.zeros_like(raw.policy_id), behavior_probs=law
+    )
     flat = flat._replace(transitions=raw, learner_seats=jnp.full_like(flat.learner_seats, -1))
     a, b = VRPOUpdater(net, cfg), PagedVRPOUpdater(net, cfg)
     try:
@@ -363,7 +408,9 @@ def test_critic_paged_training_is_half_channel_mean_sumrows_meangames():
         old = unpage(batch, q)
         target = unpage(batch, targets)
         selected_rows = int(np.asarray(flat.game_lengths)[indices].sum())
-        taken = np.take_along_axis(old[:selected_rows], np.asarray(flat.transitions.action[:selected_rows])[:, None, None], -1)[..., 0]
+        taken = np.take_along_axis(
+            old[:selected_rows], np.asarray(flat.transitions.action[:selected_rows])[:, None, None], -1
+        )[..., 0]
         expected = np.sum((taken - target[:selected_rows]) ** 2) / (6 * len(indices))
         assert float(loss) == pytest.approx(float(expected), rel=2e-6)
         old_row_mean = np.sum((taken - target[:selected_rows]) ** 2) / (3 * selected_rows)

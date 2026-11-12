@@ -27,9 +27,9 @@ def _assert_frames_stop_somewhere(frames, match: Match) -> None:
     """Every batch of frames has to leave the client with something to do."""
     assert frames, "advance() returned no frames"
     last = frames[-1]
-    assert (
-        last["prompt"] is not None or last["result"] is not None or last["gameOver"]
-    ), "frames ended without a prompt, a result or the game being over"
+    assert last["prompt"] is not None or last["result"] is not None or last["gameOver"], (
+        "frames ended without a prompt, a result or the game being over"
+    )
     for frame in frames:
         json.dumps(frame)  # no numpy scalars may leak into the payload
 
@@ -150,9 +150,7 @@ def test_no_calls_auto_passes_but_keeps_ron(registry: AgentRegistry) -> None:
 
 
 def test_hidden_hands_open_up_at_the_result(registry: AgentRegistry) -> None:
-    match = _match(
-        registry, env_id="red_4p", round_mode="east", seed=2, human_seat=1
-    )
+    match = _match(registry, env_id="red_4p", round_mode="east", seed=2, human_seat=1)
     frames = match.start()
     first = frames[0]
     hidden = [i for i in range(4) if i != 1]
@@ -189,11 +187,7 @@ def test_illegal_action_is_refused(registry: AgentRegistry) -> None:
     match.start()
     while match.result is None and int(match.state.current_player) != 0:
         break
-    illegal = next(
-        a
-        for a in range(match.rules.NUM_ACTION)
-        if not bool(match.state.legal_action_mask[a])
-    )
+    illegal = next(a for a in range(match.rules.NUM_ACTION) if not bool(match.state.legal_action_mask[a]))
     if int(match.state.current_player) == 0 and match.result is None:
         with pytest.raises(ValueError):
             match.act(illegal)

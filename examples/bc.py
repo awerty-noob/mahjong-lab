@@ -3,6 +3,7 @@
 Behavior Cloning trainer for MahjongAgent using ACNet.
 Uses only the Actor head (policy_extractor + policy_mlp).
 """
+
 import os
 import pickle
 from dataclasses import dataclass
@@ -47,6 +48,7 @@ class TrainConfig:
     # Wandb
     wandb_project: str = "mahjong-bc"
 
+
 # cli
 conf_dict = OmegaConf.from_cli()
 if __name__ == "__main__":
@@ -61,19 +63,22 @@ else:
     cfg = TrainConfig(**_bc_keys)
 NETWORK_CLS = get_network_cls(cfg.env_name)
 
+
 # --- Train State ---
 class AgentTrainState(TrainState):
     pass
+
 
 def create_train_state(rng, model, dummy_obs, lr):
     params = model.init(rng, dummy_obs)
     tx = optax.adamw(lr)
     return AgentTrainState.create(apply_fn=model.apply, params=params, tx=tx)
 
+
 # --- Step Functions ---
 @jax.jit
 def train_step(state: AgentTrainState, batch):
-    obs, act, mask = batch['obs'], batch['act'], batch['mask']
+    obs, act, mask = batch["obs"], batch["act"], batch["mask"]
 
     def loss_fn(params):
         # method=ACNet.get_action_logits を指定してActorのみ計算
@@ -89,9 +94,10 @@ def train_step(state: AgentTrainState, batch):
     acc = jnp.mean(jnp.argmax(logits, axis=-1) == act)
     return new_state, loss, acc
 
+
 @jax.jit
 def eval_step(state: AgentTrainState, batch):
-    obs, act, mask = batch['obs'], batch['act'], batch['mask']
+    obs, act, mask = batch["obs"], batch["act"], batch["mask"]
 
     logits = state.apply_fn(state.params, obs, method=NETWORK_CLS.get_action_logits)
     logits = jnp.where(mask, logits, -1e9)
@@ -99,6 +105,7 @@ def eval_step(state: AgentTrainState, batch):
 
     acc = jnp.mean(jnp.argmax(logits, axis=-1) == act)
     return loss, acc
+
 
 # --- Visualization ---
 def make_policy_fn(state: AgentTrainState, network_cls):
@@ -109,7 +116,9 @@ def make_policy_fn(state: AgentTrainState, network_cls):
         logits = state.apply_fn(state.params, obs, method=network_cls.get_action_logits)
         logits = jnp.where(mask, logits, -1e9)
         return jnp.argmax(logits, axis=-1)
+
     return policy
+
 
 def visualize_game(cfg, train_state):
     print("\n=== Visualizing Agent vs Rule-based ===", flush=True)
@@ -144,6 +153,7 @@ def visualize_game(cfg, train_state):
     save_html(history, save_path)
     print(f"Saved the game to {save_path}; open it in a browser", flush=True)
 
+
 # --- Main ---
 def main():
     if cfg.dataset_path is None:
@@ -161,13 +171,11 @@ def main():
         data = pickle.load(f)
     dataset_env_name = data.get("env_name", cfg.env_name)
     if dataset_env_name != cfg.env_name:
-        raise ValueError(
-            f"Dataset env_name mismatch: cfg={cfg.env_name}, dataset={dataset_env_name}"
-        )
+        raise ValueError(f"Dataset env_name mismatch: cfg={cfg.env_name}, dataset={dataset_env_name}")
 
-    obs_data = data['observation']
-    act_data = data['action']
-    mask_data = data['legal_action_mask']
+    obs_data = data["observation"]
+    act_data = data["action"]
+    mask_data = data["legal_action_mask"]
     num_samples = act_data.shape[0]
 
     # 2. Train/Val Split
@@ -198,13 +206,13 @@ def main():
         np.random.shuffle(train_indices)
         train_stats = {"loss": 0.0, "acc": 0.0}
 
-        pbar = tqdm(range(steps_per_epoch), desc=f"Epoch {epoch+1} [Train]", mininterval=2.0)
+        pbar = tqdm(range(steps_per_epoch), desc=f"Epoch {epoch + 1} [Train]", mininterval=2.0)
         for i in pbar:
-            batch_idx = train_indices[i*cfg.batch_size : (i+1)*cfg.batch_size]
+            batch_idx = train_indices[i * cfg.batch_size : (i + 1) * cfg.batch_size]
             batch = {
-                'obs': jax.tree.map(lambda x: x[batch_idx], obs_data),
-                'act': act_data[batch_idx],
-                'mask': mask_data[batch_idx]
+                "obs": jax.tree.map(lambda x: x[batch_idx], obs_data),
+                "act": act_data[batch_idx],
+                "mask": mask_data[batch_idx],
             }
             train_state, loss, acc = train_step(train_state, batch)
             train_stats["loss"] += float(loss)
@@ -218,23 +226,28 @@ def main():
             idx_end = min((i + 1) * cfg.batch_size, len(val_indices))
             batch_idx = val_indices[idx_start:idx_end]
             batch = {
-                'obs': jax.tree.map(lambda x: x[batch_idx], obs_data),
-                'act': act_data[batch_idx],
-                'mask': mask_data[batch_idx]
+                "obs": jax.tree.map(lambda x: x[batch_idx], obs_data),
+                "act": act_data[batch_idx],
+                "mask": mask_data[batch_idx],
             }
             loss, acc = eval_step(train_state, batch)
             val_stats["loss"] += float(loss)
             val_stats["acc"] += float(acc)
 
-        print(f"Ep {epoch+1:02d} | "
-              f"Tr Loss: {train_stats['loss']/steps_per_epoch:.4f}, Acc: {train_stats['acc']/steps_per_epoch:.4f} | "
-              f"Val Loss: {val_stats['loss']/val_steps:.4f}, Acc: {val_stats['acc']/val_steps:.4f}", flush=True)
-        wandb.log({
-        "loss": train_stats["loss"]/steps_per_epoch,
-        "acc": train_stats["acc"]/steps_per_epoch,
-        "val_loss": val_stats["loss"]/val_steps,
-        "val_acc": val_stats["acc"]/val_steps
-        })
+        print(
+            f"Ep {epoch + 1:02d} | "
+            f"Tr Loss: {train_stats['loss'] / steps_per_epoch:.4f}, Acc: {train_stats['acc'] / steps_per_epoch:.4f} | "
+            f"Val Loss: {val_stats['loss'] / val_steps:.4f}, Acc: {val_stats['acc'] / val_steps:.4f}",
+            flush=True,
+        )
+        wandb.log(
+            {
+                "loss": train_stats["loss"] / steps_per_epoch,
+                "acc": train_stats["acc"] / steps_per_epoch,
+                "val_loss": val_stats["loss"] / val_steps,
+                "val_acc": val_stats["acc"] / val_steps,
+            }
+        )
 
     # 5. Save & Visualize
     os.makedirs(os.path.dirname(cfg.save_model_path) or ".", exist_ok=True)
@@ -243,6 +256,7 @@ def main():
     print(f"Params saved to {cfg.save_model_path}")
 
     visualize_game(cfg, train_state)
+
 
 if __name__ == "__main__":
     main()

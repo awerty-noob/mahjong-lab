@@ -129,7 +129,10 @@ class Meld:
     def is_chi(meld: Array) -> Array:
         is_emp = Meld.is_empty(meld)
         action = Meld.action(meld)
-        return (((Action.CHI_L <= action) & (action <= Action.CHI_R)) | ((Action.CHI_L_RED <= action) & (action <= Action.CHI_R_RED))) & (~is_emp)
+        return (
+            ((Action.CHI_L <= action) & (action <= Action.CHI_R))
+            | ((Action.CHI_L_RED <= action) & (action <= Action.CHI_R_RED))
+        ) & (~is_emp)
 
     @staticmethod
     def is_pon(meld: Array) -> Array:
@@ -184,7 +187,7 @@ class Meld:
     def exist_prohibitive_tile_type_after_chi(action: Array, target: Array) -> Array:
         chi_index = Meld._chi_index(action)
         target_tile_type = Tile.to_tile_type(target)
-        is_chi = (chi_index >= 0)
+        is_chi = chi_index >= 0
         for_chi_l = (chi_index == 0) & is_chi & ~Tile.is_tile_type_seven(target_tile_type)
         for_chi_r = (chi_index == 2) & is_chi & ~Tile.is_tile_type_three(target_tile_type)
         return for_chi_l | for_chi_r

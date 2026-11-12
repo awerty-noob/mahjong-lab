@@ -262,9 +262,7 @@ class Rules:
                 if is_red(target):
                     tiles[0] = target
                 called = 3
-            out.append(
-                {"kind": kind, "tiles": tiles, "called": called, "from": from_seat}
-            )
+            out.append({"kind": kind, "tiles": tiles, "called": called, "from": from_seat})
         return out
 
     def river(self, state: Any, seat: int) -> List[Dict[str, Any]]:
@@ -343,9 +341,7 @@ class Rules:
         return [int(t) for t in np.asarray(state.round_state.dora_indicators) if int(t) >= 0]
 
     def ura_dora_indicators(self, state: Any) -> List[int]:
-        return [
-            int(t) for t in np.asarray(state.round_state.ura_dora_indicators) if int(t) >= 0
-        ]
+        return [int(t) for t in np.asarray(state.round_state.ura_dora_indicators) if int(t) >= 0]
 
     def remaining_draws(self, state: Any) -> int:
         rs = state.round_state

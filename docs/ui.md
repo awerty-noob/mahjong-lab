@@ -73,7 +73,7 @@ while not bool(state.terminated):
     state = step(state, act(state, k1), k2)
     states.append(state)
 
-show(states)                    # in a notebook, the cell's output
+show(states)  # in a notebook, the cell's output
 save_html(states, "game.html")  # one file that any browser opens
 ```
 

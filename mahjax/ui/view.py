@@ -107,14 +107,24 @@ YAKU_NAMES: Dict[str, Dict[str, str]] = {
     "chiihou": {"ja": "地和", "en": "Blessing of Earth", "ko": "지화", "zh": "地和"},
     "daisangen": {"ja": "大三元", "en": "Big Three Dragons", "ko": "대삼원", "zh": "大三元"},
     "suuankou": {"ja": "四暗刻", "en": "Four Concealed Pungs", "ko": "스안커", "zh": "四暗刻"},
-    "suuankou_tanki": {"ja": "四暗刻単騎", "en": "Four Concealed Pungs Single Wait", "ko": "스안커 단기", "zh": "四暗刻单骑"},
+    "suuankou_tanki": {
+        "ja": "四暗刻単騎",
+        "en": "Four Concealed Pungs Single Wait",
+        "ko": "스안커 단기",
+        "zh": "四暗刻单骑",
+    },
     "tsuuiisou": {"ja": "字一色", "en": "All Honors", "ko": "자일색", "zh": "字一色"},
     "ryuuiisou": {"ja": "緑一色", "en": "All Green", "ko": "녹일색", "zh": "绿一色"},
     "chinroutou": {"ja": "清老頭", "en": "All Terminals", "ko": "청노두", "zh": "清老头"},
     "chuuren": {"ja": "九蓮宝燈", "en": "Nine Gates", "ko": "구련보등", "zh": "九莲宝灯"},
     "junsei_chuuren": {"ja": "純正九蓮宝燈", "en": "True Nine Gates", "ko": "순정구련보등", "zh": "纯正九莲宝灯"},
     "kokushi": {"ja": "国士無双", "en": "Thirteen Orphans", "ko": "국사무쌍", "zh": "国士无双"},
-    "kokushi_13": {"ja": "国士無双十三面待ち", "en": "Thirteen Orphans 13-Wait", "ko": "국사무쌍 13면 대기", "zh": "国士无双十三面"},
+    "kokushi_13": {
+        "ja": "国士無双十三面待ち",
+        "en": "Thirteen Orphans 13-Wait",
+        "ko": "국사무쌍 13면 대기",
+        "zh": "国士无双十三面",
+    },
     "daisuushii": {"ja": "大四喜", "en": "Big Four Winds", "ko": "대사희", "zh": "大四喜"},
     "shousuushii": {"ja": "小四喜", "en": "Little Four Winds", "ko": "소사희", "zh": "小四喜"},
     "suukantsu": {"ja": "四槓子", "en": "Four Kans", "ko": "스깡즈", "zh": "四杠子"},
@@ -122,16 +132,58 @@ YAKU_NAMES: Dict[str, Dict[str, str]] = {
 
 # Yaku index -> key, in the order ``mahjax.common.yaku`` numbers them.
 _YAKU_KEYS: Tuple[str, ...] = (
-    "menzen_tsumo", "riichi", "ippatsu", "chankan", "rinshan", "haitei", "houtei",
-    "pinfu", "tanyao", "iipeiko",
-    "seat_wind_east", "seat_wind_south", "seat_wind_west", "seat_wind_north",
-    "round_wind_east", "round_wind_south", "round_wind_west", "round_wind_north",
-    "haku", "hatsu", "chun", "double_riichi", "chiitoitsu", "chanta", "ittsu",
-    "sanshoku", "sanshoku_doukou", "sankantsu", "toitoi", "sanankou", "shousangen",
-    "honroutou", "ryanpeikou", "junchan", "honitsu", "chinitsu", "renhou",
-    "tenhou", "chiihou", "daisangen", "suuankou", "suuankou_tanki", "tsuuiisou",
-    "ryuuiisou", "chinroutou", "chuuren", "junsei_chuuren", "kokushi",
-    "kokushi_13", "daisuushii", "shousuushii", "suukantsu",
+    "menzen_tsumo",
+    "riichi",
+    "ippatsu",
+    "chankan",
+    "rinshan",
+    "haitei",
+    "houtei",
+    "pinfu",
+    "tanyao",
+    "iipeiko",
+    "seat_wind_east",
+    "seat_wind_south",
+    "seat_wind_west",
+    "seat_wind_north",
+    "round_wind_east",
+    "round_wind_south",
+    "round_wind_west",
+    "round_wind_north",
+    "haku",
+    "hatsu",
+    "chun",
+    "double_riichi",
+    "chiitoitsu",
+    "chanta",
+    "ittsu",
+    "sanshoku",
+    "sanshoku_doukou",
+    "sankantsu",
+    "toitoi",
+    "sanankou",
+    "shousangen",
+    "honroutou",
+    "ryanpeikou",
+    "junchan",
+    "honitsu",
+    "chinitsu",
+    "renhou",
+    "tenhou",
+    "chiihou",
+    "daisangen",
+    "suuankou",
+    "suuankou_tanki",
+    "tsuuiisou",
+    "ryuuiisou",
+    "chinroutou",
+    "chuuren",
+    "junsei_chuuren",
+    "kokushi",
+    "kokushi_13",
+    "daisuushii",
+    "shousuushii",
+    "suukantsu",
 )
 _TILE_NAMES: Tuple[str, ...] = tuple(
     [f"{n}m" for n in range(1, 10)]
@@ -146,6 +198,7 @@ def _tile_name(tile: int) -> str:
 
 
 # --------------------------------------------------------------------- yaku
+
 
 def _yaku(key: str, han: int) -> Dict[str, Any]:
     """One line of a win's yaku list, named in each of the page's languages."""
@@ -416,11 +469,7 @@ def build_prompt(rules: Rules, state: Any, seat: int) -> Optional[Dict[str, Any]
 
     discardable = [a for a in legal if rules.is_discard(a)]
     tsumogiri = rules.TSUMOGIRI if rules.TSUMOGIRI in legal else None
-    options = [
-        _option(rules, state, seat, a)
-        for a in legal
-        if not rules.is_discard(a) and a != rules.TSUMOGIRI
-    ]
+    options = [_option(rules, state, seat, a) for a in legal if not rules.is_discard(a) and a != rules.TSUMOGIRI]
     options.sort(key=lambda o: (_OPTION_ORDER.index(o["kind"]), o["action"]))
     return {
         "kind": "claim" if target is not None else "turn",
@@ -477,9 +526,7 @@ def describe_action(rules: Rules, pre_state: Any, action: int) -> Dict[str, Any]
 # --------------------------------------------------------------------- view
 
 
-def _seat_view(
-    rules: Rules, state: Any, seat: int, info: SeatInfo, reveal: bool, score: int
-) -> Dict[str, Any]:
+def _seat_view(rules: Rules, state: Any, seat: int, info: SeatInfo, reveal: bool, score: int) -> Dict[str, Any]:
     return {
         "name": info.name,
         "kind": info.kind,
@@ -539,18 +586,14 @@ def build_view(
         },
         "dealer": int(rs.dealer),
         "current": None if over else int(state.current_player),
-        "seats": [
-            _seat_view(rules, state, i, seats[i], bool(reveal[i]), scores[i])
-            for i in range(rules.num_players)
-        ],
+        "seats": [_seat_view(rules, state, i, seats[i], bool(reveal[i]), scores[i]) for i in range(rules.num_players)],
         "lastDiscard": rules.last_discard(state),
         "prompt": prompt,
         "result": result,
         # The board shown at a round end is the one from before the sharing
         # steps, and the env only flips `terminated` during those -- so a
         # finished game is announced by the result, not by this state.
-        "gameOver": bool(state.terminated)
-        or bool(result is not None and result.get("gameOver")),
+        "gameOver": bool(state.terminated) or bool(result is not None and result.get("gameOver")),
         "step": step,
     }
 
@@ -583,9 +626,7 @@ def _situational(rules: Rules, state: Any, seat: int, is_ron: bool) -> List[Tupl
     ]
 
 
-def build_win(
-    rules: Rules, pre_state: Any, post_state: Any, seat: int, is_ron: bool
-) -> Dict[str, Any]:
+def build_win(rules: Rules, pre_state: Any, post_state: Any, seat: int, is_ron: bool) -> Dict[str, Any]:
     """One winner's overlay entry, scored exactly as the env scored it.
 
     Everything but ``points`` comes from ``pre_state``: the winning step has
@@ -638,9 +679,7 @@ def build_win(
             value = int(row[i])
             if value:
                 yaku.append(_yaku(backend.keys[i], value))
-        yaku += [
-            _yaku(key, 1) for key, flag in situational if flag
-        ]
+        yaku += [_yaku(key, 1) for key, flag in situational if flag]
 
     hand = rules.hand_tiles(pre_state, seat)
     if not is_ron:

@@ -83,8 +83,8 @@ def compact_observation(raw: Mapping[str, Any]) -> dict:
     observation["tiles_seen"] = compact_tile_axis(raw["tiles_seen"], axis=-1)
     # Set-aside norths are public dead tiles but are no longer in any hand, river,
     # or meld array the simulator's tiles_seen walks.
-    observation["tiles_seen"] = observation["tiles_seen"].at[NORTH_LOCAL_ID].add(
-        jnp.asarray(raw["kita"], jnp.int8).sum(dtype=jnp.int8)
+    observation["tiles_seen"] = (
+        observation["tiles_seen"].at[NORTH_LOCAL_ID].add(jnp.asarray(raw["kita"], jnp.int8).sum(dtype=jnp.int8))
     )
     observation["discard_shanten"] = compact_tile_axis(raw["discard_shanten"], axis=-2)
     observation["discard_can_win"] = compact_tile_axis(compact_tile_axis(raw["discard_can_win"], axis=-2), axis=-1)
@@ -230,8 +230,7 @@ def get_central_q_network_cls(env_name: str, **config):
     )
 
 
-def adapt_network_observation(observation, network_config, config=None, *,
-                              legal_action_mask=None, env_name="sanma"):
+def adapt_network_observation(observation, network_config, config=None, *, legal_action_mask=None, env_name="sanma"):
     """Legacy adapter: upstream observations are already tokenizer-compatible."""
     del network_config, config, legal_action_mask, env_name
     return observation

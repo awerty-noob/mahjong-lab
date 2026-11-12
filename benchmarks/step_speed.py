@@ -75,8 +75,10 @@ def main():
 
     import mahjax
 
-    print(f"{args.env} from {os.path.dirname(mahjax.__file__)}, {args.batch} envs x {args.steps} steps, "
-          f"jax {jax.__version__}, {jax.devices()[0].device_kind}")
+    print(
+        f"{args.env} from {os.path.dirname(mahjax.__file__)}, {args.batch} envs x {args.steps} steps, "
+        f"jax {jax.__version__}, {jax.devices()[0].device_kind}"
+    )
     print(f"{'variant':26s} {'ms per step':>11s} {'x single':>9s} {'bytes accessed':>15s}")
     times = {}
     for name, kwargs in VARIANTS.items():

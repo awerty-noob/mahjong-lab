@@ -6,6 +6,7 @@ import jax.numpy as jnp
 def orthogonal_init(scale: float = jnp.sqrt(2.0)):
     return nn.initializers.orthogonal(scale)
 
+
 class TransformerBlock(nn.Module):
     features: int
     num_heads: int
@@ -22,9 +23,7 @@ class TransformerBlock(nn.Module):
             mask = mask[:, None, None, :]
 
         y = nn.MultiHeadDotProductAttention(
-            num_heads=self.num_heads,
-            kernel_init=orthogonal_init(),
-            deterministic=True
+            num_heads=self.num_heads, kernel_init=orthogonal_init(), deterministic=True
         )(y, mask=mask)
         x = x + y
 

@@ -52,9 +52,9 @@ def _dora_array_from_state(state: Any) -> jnp.ndarray:
         return dora_counts.at[dora_of[dora_tile_type]].add(is_valid)
 
     dora_counts = jnp.zeros(Tile.NUM_TILE_TYPE, dtype=jnp.int8)
-    dora_counts = jax.vmap(update_dora_counts, in_axes=(None, 0))(
-        dora_counts, state.round_state.dora_indicators
-    ).sum(axis=0)
+    dora_counts = jax.vmap(update_dora_counts, in_axes=(None, 0))(dora_counts, state.round_state.dora_indicators).sum(
+        axis=0
+    )
     ura_dora_counts = jnp.zeros(Tile.NUM_TILE_TYPE, dtype=jnp.int8)
     ura_dora_counts = jax.vmap(update_dora_counts, in_axes=(None, 0))(
         ura_dora_counts, state.round_state.ura_dora_indicators
@@ -135,8 +135,19 @@ class _Internal:
     _FAN_OPEN = _FAN_OPEN.at[WhiteDragon].set(1)
     _FAN_OPEN = _FAN_OPEN.at[GreenDragon].set(1)
     _FAN_OPEN = _FAN_OPEN.at[RedDragon].set(1)
-    _FAN_OPEN = _FAN_OPEN.at[SeatWindEast].set(1).at[SeatWindSouth].set(1).at[SeatWindWest].set(1).at[SeatWindNorth].set(1)
-    _FAN_OPEN = _FAN_OPEN.at[PrevalentWindEast].set(1).at[PrevalentWindSouth].set(1).at[PrevalentWindWest].set(1).at[PrevalentWindNorth].set(1)
+    _FAN_OPEN = (
+        _FAN_OPEN.at[SeatWindEast].set(1).at[SeatWindSouth].set(1).at[SeatWindWest].set(1).at[SeatWindNorth].set(1)
+    )
+    _FAN_OPEN = (
+        _FAN_OPEN.at[PrevalentWindEast]
+        .set(1)
+        .at[PrevalentWindSouth]
+        .set(1)
+        .at[PrevalentWindWest]
+        .set(1)
+        .at[PrevalentWindNorth]
+        .set(1)
+    )
     _FAN_CLOSED = _FAN_OPEN
     _FAN_CLOSED = _FAN_CLOSED.at[FullyConcealedHand].set(1)
     _FAN_CLOSED = _FAN_CLOSED.at[Riichi].set(1)
@@ -302,17 +313,7 @@ class Yaku:
         nine_gates = nine_gates | (Yaku.nine_gates(code) == 1)
         outside_pung = pung & 0b100000001
         n_outside_pung = (outside_pung & 1) + ((outside_pung >> 8) & 1)
-        strong = (
-            in_range
-            & (
-                (1 << Yaku.head(code))
-                | ((chow & 1) << 2)
-                | (chow & 0b1000000)
-                | (chow << 1)
-            )
-            >> pos
-            & 1
-        )
+        strong = in_range & ((1 << Yaku.head(code)) | ((chow & 1) << 2) | (chow & 0b1000000) | (chow << 1)) >> pos & 1
         outside_loss = loss & ((outside_pung >> pos) & 1)
         fu = fu + 4 * n_pung + 4 * n_outside_pung - 2 * loss - 2 * outside_loss + 2 * strong
         return (
@@ -343,7 +344,9 @@ class Yaku:
         target = Meld.target(meld)
         action = Meld.action(meld)
         addition = jnp.zeros(34, dtype=jnp.int8)
-        addition = addition.at[target].set(3 * Meld.is_pon(meld).astype(jnp.int8) + 4 * Meld.is_kan(meld).astype(jnp.int8))
+        addition = addition.at[target].set(
+            3 * Meld.is_pon(meld).astype(jnp.int8) + 4 * Meld.is_kan(meld).astype(jnp.int8)
+        )
         chi_idx = Yaku._chi_index(action)
         start = jnp.clip(target - chi_idx, 0, 31)
         is_chi = Meld.is_chi(meld).astype(jnp.int8)
@@ -387,7 +390,7 @@ class Yaku:
         if hand.shape[0] == Tile.NUM_TILE_TYPE_WITH_RED:
             red_fan = jnp.where(
                 use_red_fives,
-                jnp.sum(hand[Tile.NUM_TILE_TYPE:]).astype(jnp.int32)
+                jnp.sum(hand[Tile.NUM_TILE_TYPE :]).astype(jnp.int32)
                 + jnp.sum(Meld.contains_red(melds)).astype(jnp.int32),
                 jnp.int32(0),
             )
@@ -416,20 +419,22 @@ class Yaku:
         )
         meld_chow_bits = jax.lax.reduce(
             jax.vmap(Meld.chow)(melds).astype(jnp.int32),
-            jnp.int32(0), jax.lax.bitwise_or, (0,),
+            jnp.int32(0),
+            jax.lax.bitwise_or,
+            (0,),
         )
         meld_pung_bits = jax.lax.reduce(
             jax.vmap(Meld.suited_pung)(melds).astype(jnp.int32),
-            jnp.int32(0), jax.lax.bitwise_or, (0,),
+            jnp.int32(0),
+            jax.lax.bitwise_or,
+            (0,),
         )
         all_chow = jnp.full(Yaku.MAX_PATTERNS, meld_chow_bits, dtype=jnp.int32)
         all_pung = jnp.full(Yaku.MAX_PATTERNS, meld_pung_bits, dtype=jnp.int32)
         n_kan = jnp.sum(Meld.is_kan(melds) & (melds != EMPTY_MELD))
         n_closed_kan = jnp.sum(Meld.is_closed_kan(melds) & (melds != EMPTY_MELD))
         n_concealed_pung = (
-            jnp.sum(hand[27:] >= 3)
-            - (is_ron & (last_tile_type >= 27) & (hand[last_tile_type] >= 3))
-            + n_closed_kan
+            jnp.sum(hand[27:] >= 3) - (is_ron & (last_tile_type >= 27) & (hand[last_tile_type] >= 3)) + n_closed_kan
         )
 
         honor_tile_types = jnp.arange(27, 34, dtype=jnp.int32)
@@ -458,8 +463,18 @@ class Yaku:
         def _update_yaku(suit: int, tpl: Tuple) -> Tuple:
             code = codes[suit]
             return Yaku.update(
-                tpl[0], tpl[1], tpl[2], tpl[3], tpl[4], tpl[5], tpl[6], tpl[7],
-                code, jnp.int32(suit), last_tile_type, is_ron,
+                tpl[0],
+                tpl[1],
+                tpl[2],
+                tpl[3],
+                tpl[4],
+                tpl[5],
+                tpl[6],
+                tpl[7],
+                code,
+                jnp.int32(suit),
+                last_tile_type,
+                is_ron,
             )
 
         init = (
@@ -547,7 +562,9 @@ class Yaku:
             dtype=jnp.bool_,
         )
         yaku_best = yaku_best.at[_Internal.YAKU_BEST_UPDATE_INDICES].set(yaku_best_update)
-        yaku_best = yaku_best.at[_Internal.PrevalentWindEast + prevalent_wind].set(flatten[prevalent_wind_tile_type] >= 3)
+        yaku_best = yaku_best.at[_Internal.PrevalentWindEast + prevalent_wind].set(
+            flatten[prevalent_wind_tile_type] >= 3
+        )
         yaku_best = yaku_best.at[_Internal.SeatWindEast + seat_wind].set(flatten[seat_wind_tile_type] >= 3)
 
         win_tile_count = hand[last_tile_type]
@@ -588,7 +605,11 @@ class Yaku:
             return yakuman, yakuman_num.astype(jnp.int32), jnp.int32(0)
 
         def _ret_normal() -> Tuple[Array, Array, Array]:
-            fan_val = jnp.dot(_Internal.FAN[jnp.where(is_hand_concealed, 1, 0)], yaku_best.astype(jnp.int32)) + jnp.dot(flatten, dora) + red_fan
+            fan_val = (
+                jnp.dot(_Internal.FAN[jnp.where(is_hand_concealed, 1, 0)], yaku_best.astype(jnp.int32))
+                + jnp.dot(flatten, dora)
+                + red_fan
+            )
             if kita is not None:
                 # Each north set aside is a dora, and one more if the north is a dora too.
                 fan_val = fan_val + jnp.int32(kita) * (1 + dora[_NORTH])
@@ -732,11 +753,11 @@ class Yaku:
 
 
 for _name in dir(_Internal):
-    if _name.startswith('_'):
+    if _name.startswith("_"):
         continue
     _value = getattr(_Internal, _name)
     if isinstance(_value, (int, jnp.integer)):
         setattr(Yaku, _name, int(_value))
 
 
-__all__ = ['NUM_TENHOU_YAKU', 'Yaku']
+__all__ = ["NUM_TENHOU_YAKU", "Yaku"]

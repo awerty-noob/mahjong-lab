@@ -54,8 +54,9 @@ ENV_ID = "red_4p"
 ROUND_MODE = "east"  # the shape the other UI tests use, so the step is traced once
 NUM_GAMES = 5
 VIEW_EVERY = 25  # views are the expensive part; sample them
-SEATS = [SeatInfo(name=n, kind=k) for n, k in
-         [("You", "human"), ("Bot A", "agent"), ("Bot B", "agent"), ("Bot C", "agent")]]
+SEATS = [
+    SeatInfo(name=n, kind=k) for n, k in [("You", "human"), ("Bot A", "agent"), ("Bot B", "agent"), ("Bot C", "agent")]
+]
 ALL_REVEAL = [True] * 4
 
 
@@ -152,8 +153,7 @@ def _check_kan_label(roll: Rollout, state: Any, seat: int, option: Dict[str, Any
             roll.prompt_failures.append(f"open kan labelled {label}")
         return
     held = int(sum(n for t, n in enumerate(rules.hand(state, seat)) if tile_type(t) == tile))
-    ponned = any(m["kind"] == "pon" and tile_type(m["tiles"][0]) == tile
-                 for m in rules.melds(state, seat))
+    ponned = any(m["kind"] == "pon" and tile_type(m["tiles"][0]) == tile for m in rules.melds(state, seat))
     want = "加槓" if ponned else "暗槓"
     if label != want:
         roll.prompt_failures.append(f"self kan of {tile} labelled {label}, held {held}")
@@ -230,9 +230,7 @@ def _run(env_id: str) -> Rollout:
                 break
             prompt = _check_prompt(roll, state)
             if i % VIEW_EVERY == 0:
-                roll.views.append(
-                    build_view(rules, state, SEATS, reveal=ALL_REVEAL, prompt=prompt)
-                )
+                roll.views.append(build_view(rules, state, SEATS, reveal=ALL_REVEAL, prompt=prompt))
             action = int(act(live, jax.random.fold_in(key, 1000 + i)))
             if game % 2 == 0:
                 # Kans are what the rule-based player almost never does, and they
@@ -259,16 +257,17 @@ def _run(env_id: str) -> Rollout:
                         "seat": seat,
                         "cached_fan": int(pre.players.fan[seat, 0]),
                         "cached_fu": int(pre.players.fu[seat, 0]),
-                        "gain": _winner_gain(
-                            rules, pre, seat, action == rules.RON, win["han"], win["fu"]
-                        ),
+                        "gain": _winner_gain(rules, pre, seat, action == rules.RON, win["han"], win["fu"]),
                     }
                 )
             abortive = action == rules.KYUUSHU
             if rules.is_round_over(state) or abortive:
                 end = pre if abortive else state
-                kind = "abortive" if abortive else ("draw" if not round_wins else
-                                                    ("ron" if round_wins[0]["from"] is not None else "tsumo"))
+                kind = (
+                    "abortive"
+                    if abortive
+                    else ("draw" if not round_wins else ("ron" if round_wins[0]["from"] is not None else "tsumo"))
+                )
                 result = build_round_result(
                     rules,
                     type=kind,
@@ -282,9 +281,19 @@ def _run(env_id: str) -> Rollout:
                 if roll.uneven is None and len(set(rules.scores(end))) == 4:
                     roll.uneven = end
                 roll.views.append(
-                    build_view(rules, end, SEATS, reveal=ALL_REVEAL, result=result,
-                               step={"index": i, "total": 0, "roundIndex": int(end.round_state.round),
-                                     "event": describe_action(rules, pre, action)})
+                    build_view(
+                        rules,
+                        end,
+                        SEATS,
+                        reveal=ALL_REVEAL,
+                        result=result,
+                        step={
+                            "index": i,
+                            "total": 0,
+                            "roundIndex": int(end.round_state.round),
+                            "event": describe_action(rules, pre, action),
+                        },
+                    )
                 )
                 round_wins = []
                 score_start = rules.scores(state)
@@ -365,21 +374,29 @@ def test_win_han_and_fu_are_what_the_env_paid(roll: Rollout) -> None:
     for record in roll.wins:
         win = record["win"]
         assert win["points"] in [g * 100 for g in record["gain"]], (
-            f"{roll.rules.env_id} han={win['han']} fu={win['fu']} "
-            f"points={win['points']} expected={record['gain']}"
+            f"{roll.rules.env_id} han={win['han']} fu={win['fu']} points={win['points']} expected={record['gain']}"
         )
 
 
 def test_views_and_results_are_json(roll: Rollout) -> None:
     assert roll.views and roll.results
-    seat_keys = {"name", "kind", "wind", "score", "riichi", "hand", "handCount",
-                 "drawn", "melds", "kita", "river"}
+    seat_keys = {"name", "kind", "wind", "score", "riichi", "hand", "handCount", "drawn", "melds", "kita", "river"}
     prompted = ura_shown = 0
     for view in roll.views:
         text = json.dumps(view, ensure_ascii=False)
         assert json.loads(text)["env"] == roll.rules.env_id
-        assert set(view) == {"env", "round", "dealer", "current", "seats",
-                             "lastDiscard", "prompt", "result", "gameOver", "step"}
+        assert set(view) == {
+            "env",
+            "round",
+            "dealer",
+            "current",
+            "seats",
+            "lastDiscard",
+            "prompt",
+            "result",
+            "gameOver",
+            "step",
+        }
         assert len(view["seats"]) == 4
         assert all(set(s) == seat_keys for s in view["seats"])
         assert all(s["kita"] == 0 for s in view["seats"])  # four players set no north aside
@@ -387,16 +404,41 @@ def test_views_and_results_are_json(roll: Rollout) -> None:
         prompted += view["prompt"] is not None
         ura_shown += view["round"]["uraDora"] is not None
     assert prompted > 0 and ura_shown > 0
-    winner_keys = {"seat", "from", "hand", "melds", "winningTile", "yaku", "doraHan",
-                   "akaHan", "uraHan", "kitaHan", "han", "fu", "yakuman", "dora", "uraDora", "points"}
+    winner_keys = {
+        "seat",
+        "from",
+        "hand",
+        "melds",
+        "winningTile",
+        "yaku",
+        "doraHan",
+        "akaHan",
+        "uraHan",
+        "kitaHan",
+        "han",
+        "fu",
+        "yakuman",
+        "dora",
+        "uraDora",
+        "points",
+    }
     assert all(set(w["win"]) == winner_keys for w in roll.wins)
     assert all(w["win"]["kitaHan"] == 0 for w in roll.wins)
     for record in roll.results:
         result = record["result"]
         json.dumps(result, ensure_ascii=False)
         assert set(result) == {
-            "type", "reason", "abortSeat", "round", "winners", "tenpai",
-            "nagashiMangan", "deltas", "scores", "gameOver", "final",
+            "type",
+            "reason",
+            "abortSeat",
+            "round",
+            "winners",
+            "tenpai",
+            "nagashiMangan",
+            "deltas",
+            "scores",
+            "gameOver",
+            "final",
         }
         assert [s - d for s, d in zip(result["scores"], result["deltas"])] == record["start"]
 
@@ -416,8 +458,13 @@ def test_round_result_fields_follow_the_kind(roll: Rollout) -> None:
 
     state = jax.device_get(roll.init(jax.random.fold_in(jax.random.PRNGKey(5), 0)))
     over = build_round_result(
-        roll.rules, type="draw", reason=None, state=state, winners=[],
-        score_start=[25000] * 4, game_over=True,
+        roll.rules,
+        type="draw",
+        reason=None,
+        state=state,
+        winners=[],
+        score_start=[25000] * 4,
+        game_over=True,
     )
     json.dumps(over, ensure_ascii=False)
     assert [f["seat"] for f in over["final"]] == [0, 1, 2, 3]
@@ -430,8 +477,13 @@ def test_melds_reach_the_view_with_the_right_shape(roll: Rollout) -> None:
     called_index = {"pon": 2, "chi": None, "kan_open": 3, "kan_added": 3, "kan_closed": None}
     for kind, record in seen.items():
         after, before = record["after"], record["before"]
-        view_kind = {"pon": "pon", "chi": "chi", "kan_open": "kan_open",
-                     "kan_added": "kan_added", "kan_closed": "kan_closed"}[kind]
+        view_kind = {
+            "pon": "pon",
+            "chi": "chi",
+            "kan_open": "kan_open",
+            "kan_added": "kan_added",
+            "kan_closed": "kan_closed",
+        }[kind]
         if kind == "kan_added":
             assert len(after) == len(before)  # the added kan replaces its pon
             meld = next(m for m in after if m["kind"] == "kan_added")
@@ -544,10 +596,6 @@ def test_describe_action_names_the_tiles(roll: Rollout) -> None:
     state = jax.device_get(roll.init(jax.random.fold_in(jax.random.PRNGKey(3), 0)))
     drawn = int(state.round_state.last_draw)
     seat = int(state.current_player)
-    assert describe_action(rules, state, rules.TSUMOGIRI) == {
-        "seat": seat, "kind": "discard", "tiles": [drawn]
-    }
+    assert describe_action(rules, state, rules.TSUMOGIRI) == {"seat": seat, "kind": "discard", "tiles": [drawn]}
     other = next(a for a in rules.legal_actions(state) if rules.is_discard(a) and a != drawn)
-    assert describe_action(rules, state, other) == {
-        "seat": seat, "kind": "discard", "tiles": [other]
-    }
+    assert describe_action(rules, state, other) == {"seat": seat, "kind": "discard", "tiles": [other]}

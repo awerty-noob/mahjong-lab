@@ -1657,7 +1657,6 @@ class PagedVRPOUpdater:
         return VRPOUpdateResult(state, rng, metrics)
 
 
-
 # Import-time cycle: ``selfplay`` re-uses the batch primitives above, so these
 # lazily forward to it instead of importing it at module scope.
 def _forward(name):

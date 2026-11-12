@@ -26,9 +26,7 @@ from ..helpers import STEP_KEY, compiled_env
 def test_kyuushu_action_is_enabled_on_first_turn() -> None:
     state = default_state()
     hand_with_red = state.players.hand_with_red.at[0].set(
-        jnp.zeros((37,), dtype=jnp.int8)
-        .at[jnp.array([0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33, 0])]
-        .add(1)
+        jnp.zeros((37,), dtype=jnp.int8).at[jnp.array([0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33, 0])].add(1)
     )
     state = state.replace(players=state.players.replace(hand_with_red=hand_with_red))
 
@@ -40,9 +38,7 @@ def test_kyuushu_action_is_enabled_on_first_turn() -> None:
 def test_kyuushu_action_is_disabled_after_the_first_turn() -> None:
     state = default_state()
     hand_with_red = state.players.hand_with_red.at[0].set(
-        jnp.zeros((37,), dtype=jnp.int8)
-        .at[jnp.array([0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33, 0])]
-        .add(1)
+        jnp.zeros((37,), dtype=jnp.int8).at[jnp.array([0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33, 0])].add(1)
     )
     state = state.replace(
         players=state.players.replace(hand_with_red=hand_with_red),
@@ -57,9 +53,7 @@ def test_kyuushu_action_is_disabled_after_the_first_turn() -> None:
 def test_kyuushu_action_is_disabled_by_game_config() -> None:
     state = default_state()
     hand_with_red = state.players.hand_with_red.at[0].set(
-        jnp.zeros((37,), dtype=jnp.int8)
-        .at[jnp.array([0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33, 0])]
-        .add(1)
+        jnp.zeros((37,), dtype=jnp.int8).at[jnp.array([0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33, 0])].add(1)
     )
     state = state.replace(players=state.players.replace(hand_with_red=hand_with_red))
     config = GameConfig(enable_special_abortive_draw=False)
@@ -159,9 +153,7 @@ def test_triple_ron_abandons_the_round_before_anything_is_paid() -> None:
 def test_abortive_draw_payments_shape() -> None:
     state = default_state()
     state = state.replace(
-        players=state.players.replace(
-            can_win=jnp.zeros((4, Tile.NUM_TILE_TYPE), dtype=jnp.bool_).at[0].set(True)
-        )
+        players=state.players.replace(can_win=jnp.zeros((4, Tile.NUM_TILE_TYPE), dtype=jnp.bool_).at[0].set(True))
     )
     next_state = _abortive_draw_normal(state)
     assert bool(next_state.round_state.terminated_round)

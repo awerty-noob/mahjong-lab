@@ -77,7 +77,11 @@ class Tile:
     @staticmethod
     def is_tile_type_five(tile_type: Array) -> Array:
         tile_type = jnp.asarray(tile_type, dtype=jnp.int32)
-        return (tile_type == RED_FIVE_TILE_TYPES[0]) | (tile_type == RED_FIVE_TILE_TYPES[1]) | (tile_type == RED_FIVE_TILE_TYPES[2])
+        return (
+            (tile_type == RED_FIVE_TILE_TYPES[0])
+            | (tile_type == RED_FIVE_TILE_TYPES[1])
+            | (tile_type == RED_FIVE_TILE_TYPES[2])
+        )
 
     @staticmethod
     def is_tile_type_seven(tile_type: Array) -> Array:
@@ -131,9 +135,7 @@ class River:
         return river.at[player, idx].set(tile_u16)
 
     @staticmethod
-    def add_meld(
-        river: Array, action: ArrayLike, player: Array, idx: Array, src: Array
-    ) -> Array:
+    def add_meld(river: Array, action: ArrayLike, player: Array, idx: Array, src: Array) -> Array:
         tile_u16 = river[player, idx]
         meld_type = jnp.where(
             (action == Action.PON) | (action == Action.PON_RED),

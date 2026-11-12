@@ -132,9 +132,7 @@ def dataclass(clz: _T) -> _T:  # noqa: C901
 
     def iterate_clz_with_keys(x):
         meta = tuple(getattr(x, name) for name in meta_fields)
-        data = tuple(
-            (jax.tree_util.GetAttrKey(name), getattr(x, name)) for name in data_fields
-        )
+        data = tuple((jax.tree_util.GetAttrKey(name), getattr(x, name)) for name in data_fields)
         return data, meta
 
     def clz_from_iterable(meta, data):
@@ -144,9 +142,7 @@ def dataclass(clz: _T) -> _T:  # noqa: C901
         return data_clz(**kwargs)
 
     if hasattr(jax.tree_util, "register_pytree_with_keys"):
-        jax.tree_util.register_pytree_with_keys(
-            data_clz, iterate_clz_with_keys, clz_from_iterable
-        )
+        jax.tree_util.register_pytree_with_keys(data_clz, iterate_clz_with_keys, clz_from_iterable)
     else:
         jax.tree_util.register_pytree_node(data_clz, iterate_clz, clz_from_iterable)
 
@@ -156,9 +152,7 @@ def dataclass(clz: _T) -> _T:  # noqa: C901
         jax.tree_util.register_keypaths(data_clz, keypaths)  # type: ignore[attr-defined]  # JAX without keys only
 
     def to_state_dict(x):
-        state_dict = {
-            name: serialization.to_state_dict(getattr(x, name)) for name in data_fields
-        }
+        state_dict = {name: serialization.to_state_dict(getattr(x, name)) for name in data_fields}
         return state_dict
 
     def from_state_dict(x, state):
@@ -185,9 +179,7 @@ def dataclass(clz: _T) -> _T:  # noqa: C901
         return x.replace(**updates)
 
     if has_flax:
-        serialization.register_serialization_state(
-            data_clz, to_state_dict, from_state_dict
-        )
+        serialization.register_serialization_state(data_clz, to_state_dict, from_state_dict)
 
     # add a _flax_dataclass flag to distinguish from regular dataclasses
     data_clz._flax_dataclass = True  # type: ignore[attr-defined]

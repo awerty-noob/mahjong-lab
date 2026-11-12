@@ -77,8 +77,10 @@ def run(args):
                 for i in range(args.chunk):
                     out.write(f"{seed} {c * args.chunk + i} {_digest(state_leaves, i)} {_digest(obs_leaves, i)}\n")
                 ended_games += int(np.asarray(stepped.terminated).sum())
-    print(f"{args.env} {args.round_mode} {args.round_end}: {args.steps} steps of {batch} games for seeds {args.seeds}, "
-          f"{ended_games} games ended, {time.time() - t0:.0f}s")
+    print(
+        f"{args.env} {args.round_mode} {args.round_end}: {args.steps} steps of {batch} games for seeds {args.seeds}, "
+        f"{ended_games} games ended, {time.time() - t0:.0f}s"
+    )
 
 
 def compare(args):

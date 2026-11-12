@@ -4,6 +4,7 @@ Data collector for Mahjong BC using Rule-based players.
 Saves observations, actions, masks, AND returns.
 Optimized for memory efficiency (Small chunks).
 """
+
 import os
 import pickle
 
@@ -27,13 +28,14 @@ class CollectConfig(BaseModel):
     num_steps: int = 32
     num_samples: int = 200_000
     dataset_path: str | None = None
-    gamma: float = 0.99       # Discount factor
-    max_reward: float = 320.0 # Normalization used
+    gamma: float = 0.99  # Discount factor
+    max_reward: float = 320.0  # Normalization used
+
 
 def _one_step(state, key, env, step_env, rule_based_player):
     obs = env.observe(state)
     mask = state.legal_action_mask
-    curr_player = state.current_player # Who's turn is it?
+    curr_player = state.current_player  # Who's turn is it?
 
     k_act, k_step = jax.random.split(key, 2)
     action = rule_based_player(state, k_act)
@@ -42,21 +44,25 @@ def _one_step(state, key, env, step_env, rule_based_player):
 
     # State transition information
     done = next_state.terminated | next_state.truncated
-    reward = next_state.rewards # [P]
+    reward = next_state.rewards  # [P]
 
     return next_state, (obs, action, mask, reward, done, curr_player)
+
 
 def _rollout_chunk(state, keys, num_steps, env, step_env, rule_based_player):
     vmap_step = jax.vmap(
         lambda st, key: _one_step(st, key, env, step_env, rule_based_player),
         in_axes=(0, 0),
     )
+
     def body(carry, key):
         st = carry
         new_st, out = vmap_step(st, key)
         return new_st, out
+
     final_state, outs = jax.lax.scan(body, state, keys, length=num_steps)
     return final_state, outs
+
 
 def compute_returns(rewards, dones, current_players, gamma):
     """
@@ -73,11 +79,11 @@ def compute_returns(rewards, dones, current_players, gamma):
     # Note: Bootstrapping is required, but we use complete data for this purpose, so we approximate it with MC.
     # Calculate for each environment
     for b in range(B):
-        running_ret = np.zeros(P, dtype=np.float32) # G_t for each player
+        running_ret = np.zeros(P, dtype=np.float32)  # G_t for each player
         for t in reversed(range(T)):
             # Reward at the current step
-            r_t = rewards[t, b] # [P]
-            d_t = dones[t, b]   # bool
+            r_t = rewards[t, b]  # [P]
+            d_t = dones[t, b]  # bool
 
             if d_t:
                 running_ret = np.zeros(P, dtype=np.float32)
@@ -92,6 +98,7 @@ def compute_returns(rewards, dones, current_players, gamma):
             returns[t, b] = running_ret[p]
 
     return returns
+
 
 def main():
     print("=== Starting Data Collection (With Returns) ===", flush=True)
@@ -112,17 +119,13 @@ def main():
     state = jax.vmap(env.init)(init_keys)
 
     print("Compiling JIT function...", flush=True)
-    jit_rollout = jax.jit(
-        lambda s, k: _rollout_chunk(
-            s, k, cfg.num_steps, env, step_env, rule_based_player
-        )
-    )
+    jit_rollout = jax.jit(lambda s, k: _rollout_chunk(s, k, cfg.num_steps, env, step_env, rule_based_player))
 
     # Buffers
     data_obs = []
     data_act = []
     data_mask = []
-    data_ret = [] # New: Returns
+    data_ret = []  # New: Returns
 
     chunk_size = cfg.num_envs * cfg.num_steps
     num_chunks = (cfg.num_samples + chunk_size - 1) // chunk_size
@@ -182,12 +185,15 @@ def main():
     full_mask = np.concatenate(data_mask, axis=0)
     full_ret = np.concatenate(data_ret, axis=0)
     N = cfg.num_samples
-    dataset = attach_dataset_metadata({
-        "observation": {k: v[:N] for k, v in full_obs.items()},
-        "action": full_act[:N],
-        "legal_action_mask": full_mask[:N],
-        "return": full_ret[:N] # New: Returns
-    }, cfg.env_name)
+    dataset = attach_dataset_metadata(
+        {
+            "observation": {k: v[:N] for k, v in full_obs.items()},
+            "action": full_act[:N],
+            "legal_action_mask": full_mask[:N],
+            "return": full_ret[:N],  # New: Returns
+        },
+        cfg.env_name,
+    )
 
     if cfg.dataset_path:
         os.makedirs(os.path.dirname(cfg.dataset_path) or ".", exist_ok=True)
@@ -195,6 +201,7 @@ def main():
         with open(cfg.dataset_path, "wb") as f:
             pickle.dump(dataset, f)
         print("Done.", flush=True)
+
 
 if __name__ == "__main__":
     main()

@@ -26,9 +26,8 @@ from networks.mahjong_3p.network import (
     get_network_cls,
     observe_for_network,
 )
-from train.configs import default_reward_config, rule_spec
-
 from networks.mahjong_3p.transformer import clone_actor_and_public_encoder, relative_q_to_absolute
+from train.configs import default_reward_config, rule_spec
 
 TINY = dict(architecture="v5", num_layers=1, d_model=8, num_heads=2, mlp_dim=16)
 HEAD = {"version": 1, "hidden_dim": 5}
@@ -36,15 +35,13 @@ HEAD = {"version": 1, "hidden_dim": 5}
 
 @pytest.fixture(scope="module")
 def bundle():
-    env = rule_spec("sanma").make_env(
-        "half", reward_config=default_reward_config("sanma")
-    )
+    env = rule_spec("sanma").make_env("half", reward_config=default_reward_config("sanma"))
     state = env.init(jax.random.key(641))
     observation = observe_for_network(env, state, TINY)
     central = build_central_q_input(state, observation)
     model = get_central_q_network_cls(
-        "sanma", network_config=TINY, head_config=HEAD,
-        critic_config=DEFAULT_CENTRAL_Q_CRITIC_CONFIG)()
+        "sanma", network_config=TINY, head_config=HEAD, critic_config=DEFAULT_CENTRAL_Q_CRITIC_CONFIG
+    )()
     variables = jax.jit(model.init)(jax.random.key(642), observation, central)
     return env, state, observation, central, model, variables
 
@@ -52,8 +49,7 @@ def bundle():
 def test_forward_init_roots_batch_jit_and_zero_fresh_q(bundle):
     _, _, obs, central, model, variables = bundle
     logits, q = jax.jit(model.apply)(variables, obs, central)
-    assert set(variables["params"]) == {
-        "policy_extractor", "policy_mlp", "critic_extractor", "value_critic_mlp"}
+    assert set(variables["params"]) == {"policy_extractor", "policy_mlp", "critic_extractor", "value_critic_mlp"}
     assert set(variables["params"]["critic_extractor"]) == {"public_encoder", "private_encoder", "fusion"}
     assert logits.shape == (1, 87) and q.shape == (1, 3, 87)
     assert np.isfinite(logits).all()
@@ -78,12 +74,16 @@ def test_exact_bc_actor_copy_and_safe_public_clone(bundle):
     actual = model.apply(cloned, obs, method=model.get_action_and_aux)
     for x, y in zip(jax.tree.leaves(actual), jax.tree.leaves(expected)):
         np.testing.assert_array_equal(x, y)
-    for x, y in zip(jax.tree.leaves(cloned["params"]["critic_extractor"]["public_encoder"]),
-                    jax.tree.leaves(source["params"]["policy_extractor"])):
+    for x, y in zip(
+        jax.tree.leaves(cloned["params"]["critic_extractor"]["public_encoder"]),
+        jax.tree.leaves(source["params"]["policy_extractor"]),
+    ):
         np.testing.assert_array_equal(x, y)
     for root in ("private_encoder", "fusion"):
-        for x, y in zip(jax.tree.leaves(cloned["params"]["critic_extractor"][root]),
-                        jax.tree.leaves(variables["params"]["critic_extractor"][root])):
+        for x, y in zip(
+            jax.tree.leaves(cloned["params"]["critic_extractor"][root]),
+            jax.tree.leaves(variables["params"]["critic_extractor"][root]),
+        ):
             np.testing.assert_array_equal(x, y)
     np.testing.assert_array_equal(model.apply(cloned, central, method=model.get_action_q), 0)
     bad = copy.deepcopy(source)
@@ -100,12 +100,18 @@ def test_hidden_hand_deck_prestate_and_actor_privacy(bundle):
     changed = state.replace(players=players, round_state=state.round_state.replace(deck=deck))
     central_changed = build_central_q_input(changed, obs)
     np.testing.assert_array_equal(central_changed["observation"]["hand"], obs["hand"])
-    assert not np.array_equal(central_changed["privileged"]["players"]["hand"], central["privileged"]["players"]["hand"])
-    assert not np.array_equal(central_changed["privileged"]["round_state"]["deck"], central["privileged"]["round_state"]["deck"])
+    assert not np.array_equal(
+        central_changed["privileged"]["players"]["hand"], central["privileged"]["players"]["hand"]
+    )
+    assert not np.array_equal(
+        central_changed["privileged"]["round_state"]["deck"], central["privileged"]["round_state"]["deck"]
+    )
     # Actor method has no privileged argument, and an actor-only variables tree works.
     actor = {"params": {key: variables["params"][key] for key in ("policy_extractor", "policy_mlp")}}
-    np.testing.assert_array_equal(model.apply(actor, obs, method=model.get_action_logits),
-                                  model.apply(actor, central_changed["observation"], method=model.get_action_logits))
+    np.testing.assert_array_equal(
+        model.apply(actor, obs, method=model.get_action_logits),
+        model.apply(actor, central_changed["observation"], method=model.get_action_logits),
+    )
     for key in ("privileged", "others_hand", "deck", "rng", "return", "outcome"):
         injected = dict(obs, **{key: jnp.zeros(())})
         with pytest.raises(ValueError, match="forbidden actor"):
@@ -173,7 +179,9 @@ def test_new_q_gradients_private_finite_and_actor_independent(bundle):
     for branch in ("public_encoder", "private_encoder", "fusion"):
         assert any(np.any(np.asarray(x) != 0) for x in jax.tree.leaves(gradients["critic_extractor"][branch]))
     hidden_changed = copy.deepcopy(central)
-    hidden_changed["privileged"]["round_state"]["deck"] = hidden_changed["privileged"]["round_state"]["deck"].at[0].set(28)
+    hidden_changed["privileged"]["round_state"]["deck"] = (
+        hidden_changed["privileged"]["round_state"]["deck"].at[0].set(28)
+    )
     expected = model.apply(updated, central, method=model.get_action_q)
     actual = model.apply(updated, hidden_changed, method=model.get_action_q)
     assert not np.array_equal(expected, actual)
@@ -195,7 +203,8 @@ def test_q_is_unmasked_including_reserved_actions(bundle):
     variables = copy.deepcopy(variables)
     for name in ("discard", "self_kan", "special"):
         variables["params"]["value_critic_mlp"][name]["bias"] = jnp.ones_like(
-            variables["params"]["value_critic_mlp"][name]["bias"])
+            variables["params"]["value_critic_mlp"][name]["bias"]
+        )
     q = model.apply(variables, central, method=model.get_action_q)
     np.testing.assert_array_equal(q, 1)
     assert not bool(state.legal_action_mask[27])
@@ -205,13 +214,23 @@ def test_q_is_unmasked_including_reserved_actions(bundle):
 def test_critic_root_schema_strict_and_legacy_behavior_unchanged(bundle):
     _, _, obs, _, _, _ = bundle
     assert checkpoint_critic_config({}) == LEGACY_CRITIC_CONFIG
-    assert checkpoint_critic_config({"metadata": {"critic_config": DEFAULT_CENTRAL_Q_CRITIC_CONFIG}}) == LEGACY_CRITIC_CONFIG
-    assert checkpoint_critic_config({"critic_config": DEFAULT_CENTRAL_Q_CRITIC_CONFIG}) == DEFAULT_CENTRAL_Q_CRITIC_CONFIG
-    for config in (None, {}, {"version": 1}, dict(DEFAULT_CENTRAL_Q_CRITIC_CONFIG, version=True),
-                   dict(DEFAULT_CENTRAL_Q_CRITIC_CONFIG, payoff_seats="relative3"),
-                   dict(DEFAULT_CENTRAL_Q_CRITIC_CONFIG, action_count=86),
-                   dict(DEFAULT_CENTRAL_Q_CRITIC_CONFIG, state_input_schema=True),
-                   dict(DEFAULT_CENTRAL_Q_CRITIC_CONFIG, extra=0)):
+    assert (
+        checkpoint_critic_config({"metadata": {"critic_config": DEFAULT_CENTRAL_Q_CRITIC_CONFIG}})
+        == LEGACY_CRITIC_CONFIG
+    )
+    assert (
+        checkpoint_critic_config({"critic_config": DEFAULT_CENTRAL_Q_CRITIC_CONFIG}) == DEFAULT_CENTRAL_Q_CRITIC_CONFIG
+    )
+    for config in (
+        None,
+        {},
+        {"version": 1},
+        dict(DEFAULT_CENTRAL_Q_CRITIC_CONFIG, version=True),
+        dict(DEFAULT_CENTRAL_Q_CRITIC_CONFIG, payoff_seats="relative3"),
+        dict(DEFAULT_CENTRAL_Q_CRITIC_CONFIG, action_count=86),
+        dict(DEFAULT_CENTRAL_Q_CRITIC_CONFIG, state_input_schema=True),
+        dict(DEFAULT_CENTRAL_Q_CRITIC_CONFIG, extra=0),
+    ):
         with pytest.raises(ValueError, match="critic_config"):
             validate_critic_config(config)
     assert get_central_q_network_cls("sanma", network_config=TINY)().critic_config == DEFAULT_CENTRAL_Q_CRITIC_CONFIG
@@ -227,8 +246,8 @@ def test_critic_root_schema_strict_and_legacy_behavior_unchanged(bundle):
     logits, value = jax.jit(legacy.apply)(old, obs)
     assert logits.shape == (1, 87) and value.shape == (1,)
     q = get_central_q_network_cls(
-        "sanma", network_config=TINY, head_config=HEAD,
-        critic_config=DEFAULT_CENTRAL_Q_CRITIC_CONFIG)()
+        "sanma", network_config=TINY, head_config=HEAD, critic_config=DEFAULT_CENTRAL_Q_CRITIC_CONFIG
+    )()
     assert q.critic_config == DEFAULT_CENTRAL_Q_CRITIC_CONFIG
 
 

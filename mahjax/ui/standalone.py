@@ -51,9 +51,7 @@ def show(states: Any, *, height: int = 640) -> None:
         # IFrame, which takes a URL, not a page.
         display({"text/html": _iframe(page, height), "text/plain": "MahJax replay"}, raw=True)
         return
-    with tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", prefix="mahjax-", suffix=".html", delete=False
-    ) as file:
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", prefix="mahjax-", suffix=".html", delete=False) as file:
         file.write(page)
     print(f"MahJax: open {file.name} in a browser")
 
@@ -107,10 +105,7 @@ def _tiles() -> Dict[str, Dict[str, str]]:
 
 def _iframe(page: str, height: int) -> str:
     # The frame keeps the page's styles and script apart from the notebook's own.
-    return (
-        f'<iframe srcdoc="{html.escape(page)}" '
-        f'style="width: 100%; height: {int(height)}px; border: 0;"></iframe>'
-    )
+    return f'<iframe srcdoc="{html.escape(page)}" style="width: 100%; height: {int(height)}px; border: 0;"></iframe>'
 
 
 def _in_notebook() -> bool:

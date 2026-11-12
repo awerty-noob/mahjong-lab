@@ -58,16 +58,20 @@ class ACNet(nn.Module):
     def setup(self):
         self.policy_extractor = TransformerEncoder(tokenizer_cls=self.tokenizer_cls)
         self.critic_extractor = TransformerEncoder(tokenizer_cls=self.tokenizer_cls)
-        self.policy_mlp = nn.Sequential([
-            nn.Dense(FINAL_MLP_DIM, kernel_init=orthogonal_init()),
-            nn.relu,
-            nn.Dense(self.tokenizer_cls.NUM_ACTIONS, kernel_init=orthogonal_init(0.01)),
-        ])
-        self.value_critic_mlp = nn.Sequential([
-            nn.Dense(FINAL_MLP_DIM, kernel_init=orthogonal_init()),
-            nn.relu,
-            nn.Dense(1, kernel_init=orthogonal_init()),
-        ])
+        self.policy_mlp = nn.Sequential(
+            [
+                nn.Dense(FINAL_MLP_DIM, kernel_init=orthogonal_init()),
+                nn.relu,
+                nn.Dense(self.tokenizer_cls.NUM_ACTIONS, kernel_init=orthogonal_init(0.01)),
+            ]
+        )
+        self.value_critic_mlp = nn.Sequential(
+            [
+                nn.Dense(FINAL_MLP_DIM, kernel_init=orthogonal_init()),
+                nn.relu,
+                nn.Dense(1, kernel_init=orthogonal_init()),
+            ]
+        )
 
     def __call__(self, obs):
         return self.get_action_logits(obs), self.get_value(obs)

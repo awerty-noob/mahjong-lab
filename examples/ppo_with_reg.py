@@ -78,8 +78,10 @@ class PPOWithRegArgs(BaseModel):
     viz_max_steps: int = 1000
     viz_out_dir: str = "fig"
     viz_filename: str = "ppo_with_reg_agent_game.html"
+
     class args:
         extra = "forbid"
+
 
 args = PPOWithRegArgs(**OmegaConf.to_object(OmegaConf.from_cli()))
 NETWORK_CLS = get_network_cls(args.env_name)
@@ -106,8 +108,10 @@ class Transition(NamedTuple):
     action_mask: jnp.ndarray
     current_player: jnp.ndarray
 
+
 def masked_mean(x: jnp.ndarray, mask: jnp.ndarray) -> jnp.ndarray:
     return (x * mask.astype(jnp.float32)).sum() / jnp.maximum(mask.astype(jnp.float32).sum(), 1.0)
+
 
 # --- 1. COLLECT ROLLOUT ---
 def make_collect_rollout_fn(network: nn.Module):
@@ -134,8 +138,14 @@ def make_collect_rollout_fn(network: nn.Module):
             reward = jnp.asarray(next_state.rewards, dtype=jnp.float32) / MAX_REWARD  # (B, 4)
 
             transition = Transition(
-                is_new_episode=is_new_episode, action=action, value=jnp.squeeze(value), reward=reward,
-                log_prob=log_prob, observation=observation, action_mask=action_mask, current_player=current_player
+                is_new_episode=is_new_episode,
+                action=action,
+                value=jnp.squeeze(value),
+                reward=reward,
+                log_prob=log_prob,
+                observation=observation,
+                action_mask=action_mask,
+                current_player=current_player,
             )
             return (next_state, rng), transition
 
@@ -143,6 +153,7 @@ def make_collect_rollout_fn(network: nn.Module):
         keys = jax.random.split(key, args.num_envs)
         (env_state, _), transitions = batched_rollout((env_state, keys), None)
         return env_state, transitions
+
     return collect_rollout
 
 
@@ -150,6 +161,7 @@ def calculate_gae(transitions: Transition):
     """
     Calculate Generalized Advantage Estimation (GAE)
     """
+
     def single_env_gae(transition: Transition):
         def scan_fn(carry, t: Transition):
             gae, next_value, reward_accum, has_next_value, is_new_episode, next_valid_mask = carry
@@ -173,20 +185,31 @@ def calculate_gae(transitions: Transition):
             target = jnp.where(is_valid, advantage + value, value)
 
             new_carry = (
-                gae, next_value.at[player].set(value), reward_accum,
-                has_next_value.at[player].set(True), done, next_valid_mask.at[player].set(is_valid) | done
+                gae,
+                next_value.at[player].set(value),
+                reward_accum,
+                has_next_value.at[player].set(True),
+                done,
+                next_valid_mask.at[player].set(is_valid) | done,
             )
             output = (
                 jnp.zeros(NUM_PLAYERS).at[player].set(advantage),
                 jnp.zeros(NUM_PLAYERS).at[player].set(target),
-                jnp.zeros(NUM_PLAYERS, dtype=bool).at[player].set(is_valid)
+                jnp.zeros(NUM_PLAYERS, dtype=bool).at[player].set(is_valid),
             )
             return new_carry, output
 
-        init = (jnp.zeros(NUM_PLAYERS), jnp.zeros(NUM_PLAYERS), jnp.zeros(NUM_PLAYERS),
-                jnp.zeros(NUM_PLAYERS, dtype=bool), False, jnp.zeros(NUM_PLAYERS, dtype=bool))
+        init = (
+            jnp.zeros(NUM_PLAYERS),
+            jnp.zeros(NUM_PLAYERS),
+            jnp.zeros(NUM_PLAYERS),
+            jnp.zeros(NUM_PLAYERS, dtype=bool),
+            False,
+            jnp.zeros(NUM_PLAYERS, dtype=bool),
+        )
         _, (adv, targets, valid_mask) = lax.scan(scan_fn, init, transition, reverse=True)
         return adv, targets, valid_mask
+
     return jax.vmap(single_env_gae)(transitions)
 
 
@@ -203,7 +226,9 @@ def process_trajectory(transitions: Transition):
 
     mask_float = valid_mask.astype(jnp.float32)
     # Normalize Advantage
-    advantages = (advantages - masked_mean(advantages, mask_float)) / (jnp.sqrt(masked_mean((advantages - masked_mean(advantages, mask_float))**2, mask_float)) + 1e-8)
+    advantages = (advantages - masked_mean(advantages, mask_float)) / (
+        jnp.sqrt(masked_mean((advantages - masked_mean(advantages, mask_float)) ** 2, mask_float)) + 1e-8
+    )
 
     return flat_transitions, advantages, targets, valid_mask
 
@@ -220,9 +245,13 @@ def make_update_fn(network: nn.Module, use_magnet: bool = False):
 
             batch_shuffled = (
                 jax.tree.map(lambda x: x[permutation], flat_transitions),
-                advantages[permutation], targets[permutation], valid_mask[permutation]
+                advantages[permutation],
+                targets[permutation],
+                valid_mask[permutation],
             )  # Shuffled batch
-            minibatches = jax.tree.map(lambda x: x.reshape((NUM_MINIBATCHES, args.minibatch_size) + x.shape[1:]), batch_shuffled)
+            minibatches = jax.tree.map(
+                lambda x: x.reshape((NUM_MINIBATCHES, args.minibatch_size) + x.shape[1:]), batch_shuffled
+            )
 
             def train_minibatch(t_state, minibatch):
                 transition_mb: Transition
@@ -237,7 +266,10 @@ def make_update_fn(network: nn.Module, use_magnet: bool = False):
                     log_ratio = dists.log_prob(transition_mb.action) - transition_mb.log_prob
                     ratio = jnp.exp(log_ratio)[..., None]
 
-                    ppo_loss = -masked_mean(jnp.minimum(ratio * adv_mb, jnp.clip(ratio, 1-args.clip_eps, 1+args.clip_eps) * adv_mb), mask_mb)
+                    ppo_loss = -masked_mean(
+                        jnp.minimum(ratio * adv_mb, jnp.clip(ratio, 1 - args.clip_eps, 1 + args.clip_eps) * adv_mb),
+                        mask_mb,
+                    )
 
                     # REGULARIZATION LOSS
                     mag_kl = 0.0
@@ -247,24 +279,43 @@ def make_update_fn(network: nn.Module, use_magnet: bool = False):
                         if args.mag_divergence_type == "kl":
                             vals = dists.kl_divergence(mag_dists)
                         else:
-                            vals = 0.5 * jnp.sum((dists.probs - mag_dists.probs)**2, axis=-1)
+                            vals = 0.5 * jnp.sum((dists.probs - mag_dists.probs) ** 2, axis=-1)
                         mag_kl = masked_mean(vals[..., None], mask_mb)
 
                     entropy = masked_mean(dists.entropy()[..., None], mask_mb)
                     loss_actor = ppo_loss - args.ent_coef * entropy + args.mag_coef * mag_kl
 
                     # CRITIC LOSS
-                    value_clipped = transition_mb.value[..., None] + jnp.clip(values[..., None] - transition_mb.value[..., None], -args.clip_eps, args.clip_eps)
-                    loss_critic = 0.5 * args.vf_coef * masked_mean(jnp.maximum((values[..., None] - target_mb)**2, (value_clipped - target_mb)**2), mask_mb)
+                    value_clipped = transition_mb.value[..., None] + jnp.clip(
+                        values[..., None] - transition_mb.value[..., None], -args.clip_eps, args.clip_eps
+                    )
+                    loss_critic = (
+                        0.5
+                        * args.vf_coef
+                        * masked_mean(
+                            jnp.maximum((values[..., None] - target_mb) ** 2, (value_clipped - target_mb) ** 2), mask_mb
+                        )
+                    )
 
                     # FOR LOGGING
                     approx_kl = masked_mean((ratio - 1.0) - log_ratio[..., None], mask_mb)
                     clip_frac = masked_mean((jnp.abs(ratio - 1.0) > args.clip_eps).astype(jnp.float32), mask_mb)
-                    explained_var = jnp.maximum(1 - masked_mean((target_mb - values[..., None])**2, mask_mb) / (masked_mean((target_mb - masked_mean(target_mb, mask_mb))**2, mask_mb)+1e-8), 0)
+                    explained_var = jnp.maximum(
+                        1
+                        - masked_mean((target_mb - values[..., None]) ** 2, mask_mb)
+                        / (masked_mean((target_mb - masked_mean(target_mb, mask_mb)) ** 2, mask_mb) + 1e-8),
+                        0,
+                    )
 
                     return loss_actor + loss_critic, {
-                        "total_loss": loss_actor + loss_critic, "actor_loss": loss_actor, "critic_loss": loss_critic,
-                        "entropy": entropy, "approx_kl": approx_kl, "mag_kl": mag_kl, "clip_frac": clip_frac, "explained_var": explained_var
+                        "total_loss": loss_actor + loss_critic,
+                        "actor_loss": loss_actor,
+                        "critic_loss": loss_critic,
+                        "entropy": entropy,
+                        "approx_kl": approx_kl,
+                        "mag_kl": mag_kl,
+                        "clip_frac": clip_frac,
+                        "explained_var": explained_var,
                     }
 
                 grads, metrics = jax.grad(loss_fn, has_aux=True)(t_state.params)
@@ -276,6 +327,7 @@ def make_update_fn(network: nn.Module, use_magnet: bool = False):
         (train_state, _), metrics = lax.scan(train_epoch, (train_state, key), None, length=args.update_epochs)
 
         return train_state, jax.tree.map(jnp.mean, metrics)
+
     return update_parameters
 
 
@@ -287,6 +339,7 @@ def make_evaluator(network: nn.Module, num_eval_envs, baseline_params):
             del key
             logits, _ = network.apply(params, BASE_ENV.observe(state))
             return jnp.argmax(jnp.where(state.legal_action_mask, logits, NEG))
+
         return actor
 
     def random_actor(state, key):
@@ -306,6 +359,7 @@ def make_evaluator(network: nn.Module, num_eval_envs, baseline_params):
             magnet_actor = make_net_actor(magnet_params)
             log.update({f"vs_magnet/{k}": v for k, v in one_vs_three(agent_actor, magnet_actor)(k_mag).items()})
         return key_ret, log
+
     return evaluate
 
 
@@ -316,11 +370,7 @@ def train(rng_key):
     dummy_obs = BASE_ENV.observe(BASE_ENV.init(jax.random.PRNGKey(0)))
     params = network.init(key_net, dummy_obs)
     # Initialize train state
-    train_state = TrainState.create(
-        apply_fn=network.apply,
-        params=params,
-        tx=optax.adamw(args.lr, eps=1e-5)
-    )
+    train_state = TrainState.create(apply_fn=network.apply, params=params, tx=optax.adamw(args.lr, eps=1e-5))
     # Load baseline parameters (used for evaluation comparison)
     if args.pretrained_model_path:
         print(f"Loading baseline: {args.pretrained_model_path}", flush=True)
@@ -378,26 +428,30 @@ def train(rng_key):
         inv_len = jnp.mean(transitions.is_new_episode.astype(jnp.float32))
         avg_reward = jnp.mean(transitions.reward[..., 0])
 
-        wandb.log({
-            "steps": steps, "update": i + 1,
-            "train/loss_total": float(loss_metrics["total_loss"]),
-            "train/loss_actor": float(loss_metrics["actor_loss"]),
-            "train/loss_critic": float(loss_metrics["critic_loss"]),
-            "train/entropy": float(loss_metrics["entropy"]),
-            "train/approx_kl": float(loss_metrics["approx_kl"]),
-            "train/mag_kl": float(loss_metrics["mag_kl"]),
-            "train/clip_frac": float(loss_metrics["clip_frac"]),
-            "train/explained_var": float(loss_metrics["explained_var"]),
-            "train/avg_reward": float(avg_reward),
-            "train/avg_eps_len": float(1.0/inv_len) if inv_len > 0 else float('nan'),
-            "train/avg_return": float(avg_reward/inv_len) if inv_len > 0 else float('nan')
-        })
+        wandb.log(
+            {
+                "steps": steps,
+                "update": i + 1,
+                "train/loss_total": float(loss_metrics["total_loss"]),
+                "train/loss_actor": float(loss_metrics["actor_loss"]),
+                "train/loss_critic": float(loss_metrics["critic_loss"]),
+                "train/entropy": float(loss_metrics["entropy"]),
+                "train/approx_kl": float(loss_metrics["approx_kl"]),
+                "train/mag_kl": float(loss_metrics["mag_kl"]),
+                "train/clip_frac": float(loss_metrics["clip_frac"]),
+                "train/explained_var": float(loss_metrics["explained_var"]),
+                "train/avg_reward": float(avg_reward),
+                "train/avg_eps_len": float(1.0 / inv_len) if inv_len > 0 else float("nan"),
+                "train/avg_return": float(avg_reward / inv_len) if inv_len > 0 else float("nan"),
+            }
+        )
 
         if args.do_eval and ((i + 1) % args.eval_interval == 0 or i + 1 == NUM_UPDATES):
             rng = eval_and_log(rng, steps, i + 1, train_state.params, magnet_params)
     print(f"Training time: {time.time() - start_time} seconds", flush=True)
     wandb.log({"train_time": time.time() - start_time, "steps": steps})
     return train_state
+
 
 if __name__ == "__main__":
     wandb.init(project=args.wandb_project, config=args.dict())

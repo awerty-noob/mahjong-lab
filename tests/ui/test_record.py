@@ -215,7 +215,6 @@ def test_a_voided_round_lists_no_winners(registry: AgentRegistry) -> None:
         assert result["winners"] == []
 
 
-
 def test_a_record_saved_on_a_result_still_replays(registry: AgentRegistry) -> None:
     """Quitting while a round's result is on screen leaves a log that ends on
     that result. The replay stops there instead of dealing a round the log never

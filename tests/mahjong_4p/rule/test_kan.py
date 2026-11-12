@@ -129,12 +129,14 @@ def test_a_robbed_added_kan_is_scored_before_the_previous_kans_indicator_turns_o
     # each and 111m 999m, and draws hatsu from both rinshan draws: the second is a
     # rinshan tsumo (toitoi).
     others = [9, 10, 11, 16, 17, 22, 24, 25, 26, 27, 28, 30, 31]
-    hands = jnp.stack([
-        counts([19, 20, 21, 3, 4, 5, 7, 7, 7, 23, 23, 13, 14]),
-        counts([west, seven_p, 0, 0, 0, 8, 8, 8]),
-        counts(others),
-        counts(others),
-    ])
+    hands = jnp.stack(
+        [
+            counts([19, 20, 21, 3, 4, 5, 7, 7, 7, 23, 23, 13, 14]),
+            counts([west, seven_p, 0, 0, 0, 8, 8, 8]),
+            counts(others),
+            counts(others),
+        ]
+    )
     base = _init(State, jax.random.PRNGKey(2))
     melds = base.players.melds.at[1, 0].set(Meld.init(Action.PON, west, 2))
     melds = melds.at[1, 1].set(Meld.init(Action.PON, seven_p, 2))
@@ -284,11 +286,7 @@ def test_robbing_kan_mask_drops_stale_self_turn_actions() -> None:
 
     kan_state = _kan(state, jnp.int32(action))
 
-    expected = (
-        jnp.zeros((Action.NUM_ACTION,), dtype=jnp.bool_)
-        .at[Action.RON].set(True)
-        .at[Action.PASS].set(True)
-    )
+    expected = jnp.zeros((Action.NUM_ACTION,), dtype=jnp.bool_).at[Action.RON].set(True).at[Action.PASS].set(True)
     assert int(kan_state.current_player) == 1
     assert bool(kan_state.round_state.kan_declared)
     assert bool(jnp.all(kan_state.players.legal_action_mask[1] == expected))
@@ -375,8 +373,10 @@ def test_robbing_kan_second_candidate_pass_after_ron_does_not_draw_after_kan() -
         melds=default_state().players.melds.at[2, 1].set(Meld.init(Action.PON, tile_ids["2m"], 1)),
         can_win=(
             jnp.zeros((4, Tile.NUM_TILE_TYPE), dtype=jnp.bool_)
-            .at[1, tile_ids["2m"]].set(True)
-            .at[3, tile_ids["2m"]].set(True)
+            .at[1, tile_ids["2m"]]
+            .set(True)
+            .at[3, tile_ids["2m"]]
+            .set(True)
         ),
         last_draw=jnp.int8(tile_ids["2m"]),
         last_player=jnp.int8(2),
@@ -456,18 +456,12 @@ def test_red_robbing_kan_on_a_red_five_keeps_the_red_dora() -> None:
     def rob(declarer_holds_red: bool):
         base = default_state()
         declarer, winner = 0, 1
-        declarer_hand = jnp.zeros((37,), dtype=jnp.int8).at[
-            red_five_p if declarer_holds_red else five_p
-        ].set(1)
+        declarer_hand = jnp.zeros((37,), dtype=jnp.int8).at[red_five_p if declarer_holds_red else five_p].set(1)
         winner_hand = jnp.zeros((37,), dtype=jnp.int8)
         for tile in (11, 12, 0, 1, 2, 3, 4, 5, 6, 7, 8, 18, 18):
             winner_hand = winner_hand.at[tile].add(1)
-        hand_with_red = base.players.hand_with_red.at[declarer].set(declarer_hand).at[
-            winner
-        ].set(winner_hand)
-        hand = base.players.hand.at[declarer].set(Hand.to_34(declarer_hand)).at[winner].set(
-            Hand.to_34(winner_hand)
-        )
+        hand_with_red = base.players.hand_with_red.at[declarer].set(declarer_hand).at[winner].set(winner_hand)
+        hand = base.players.hand.at[declarer].set(Hand.to_34(declarer_hand)).at[winner].set(Hand.to_34(winner_hand))
         can_win = jax.vmap(Hand.can_ron, in_axes=(None, 0))(hand[winner], jnp.arange(34))
         state = _replace_state(
             base,

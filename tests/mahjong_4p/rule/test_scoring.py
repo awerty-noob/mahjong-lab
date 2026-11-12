@@ -50,9 +50,7 @@ def test_pao_and_nagashi_mangan_scoring() -> None:
     assert jnp.array_equal(ron_after.rewards, expected_ron)
 
     nagashi_state = base.replace(
-        players=base.players.replace(
-            has_nagashi_mangan=jnp.array([True, False, False, False], dtype=jnp.bool_)
-        ),
+        players=base.players.replace(has_nagashi_mangan=jnp.array([True, False, False, False], dtype=jnp.bool_)),
         round_state=base.round_state.replace(
             dealer=jnp.int8(0),
             honba=jnp.int8(1),
@@ -106,9 +104,7 @@ def test_double_ron_config_chains_ron_and_pass_resolution() -> None:
     assert int(after_pass.round_state.kyotaku) == 0
     # Declining the second ron closes the window, and P0's ron is paid then.
     assert jnp.array_equal(after_pass.rewards, jnp.array([103, 0, 0, -83], dtype=jnp.float32))
-    assert jnp.array_equal(
-        after_pass.round_state.score, jnp.int32(ron_state.round_state.score + after_pass.rewards)
-    )
+    assert jnp.array_equal(after_pass.round_state.score, jnp.int32(ron_state.round_state.score + after_pass.rewards))
     assert not bool(after_pass.pending_rewards.any())
 
 
@@ -242,14 +238,10 @@ def test_red_rewards_report_only_the_current_transition() -> None:
     for _ in range(1500):
         before = state.round_state.score
         key, action_key, step_key = jax.random.split(key, 3)
-        action = jax.random.categorical(
-            action_key, jnp.log(jnp.where(state.legal_action_mask, 1.0, 0.0))
-        )
+        action = jax.random.categorical(action_key, jnp.log(jnp.where(state.legal_action_mask, 1.0, 0.0)))
         state = step(state, action.astype(jnp.int8), step_key)
         delta = (state.round_state.score - before).astype(jnp.float32)
-        assert jnp.allclose(state.rewards, delta), (
-            f"rewards {state.rewards} but the score moved by {delta}"
-        )
+        assert jnp.allclose(state.rewards, delta), f"rewards {state.rewards} but the score moved by {delta}"
         if bool(state.terminated) or bool(state.truncated):
             break
 

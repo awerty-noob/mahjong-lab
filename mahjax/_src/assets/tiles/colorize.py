@@ -127,8 +127,7 @@ ACCENTS: Dict[str, Tuple[Tuple[str, Tuple[Region, ...]], ...]] = {
 
 NUMBER = re.compile(r"[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?")
 #: Which arguments of each command are points, and how many arguments it takes.
-POINTS = {"M": [(0, 1)], "L": [(0, 1)], "Q": [(0, 1), (2, 3)],
-          "C": [(0, 1), (2, 3), (4, 5)], "A": [(5, 6)], "Z": []}
+POINTS = {"M": [(0, 1)], "L": [(0, 1)], "Q": [(0, 1), (2, 3)], "C": [(0, 1), (2, 3), (4, 5)], "A": [(5, 6)], "Z": []}
 ARITY = {"M": 2, "L": 2, "Q": 4, "C": 6, "A": 7, "Z": 0}
 
 Box = Tuple[float, float, float, float]
@@ -175,9 +174,7 @@ def _frame_indices(subs: List[str], width: float, height: float) -> List[int]:
     return [
         i
         for i, s in enumerate(subs)
-        if (lambda b: (b[2] - b[0]) >= 0.85 * width and (b[3] - b[1]) >= 0.85 * height)(
-            _bbox(s)
-        )
+        if (lambda b: (b[2] - b[0]) >= 0.85 * width and (b[3] - b[1]) >= 0.85 * height)(_bbox(s))
     ]
 
 
@@ -247,9 +244,7 @@ def _mask(
     shapes = [f'<rect x="0" y="0" width="{width}" height="{height}" fill="#fff" stroke="none"/>'] if invert else []
     for region in regions:
         if isinstance(region, Circle):
-            shapes.append(
-                f'<circle cx="{region.cx}" cy="{region.cy}" r="{region.r}" fill="{on}" stroke="none"/>'
-            )
+            shapes.append(f'<circle cx="{region.cx}" cy="{region.cy}" r="{region.r}" fill="{on}" stroke="none"/>')
         elif isinstance(region, Side):
             shapes.append(f'<polygon points="{_half_plane(region)}" fill="{off}" stroke="none"/>')
         else:
@@ -308,8 +303,7 @@ def paint(path: Path) -> bool:
     assert group_tag is not None  # svg.index("<g") above has found one
     group = group_tag.group(0)
     body = "".join(
-        _path(" ".join(parts), colour, base if colour == suit_colour else "")
-        for colour, parts in by_colour.items()
+        _path(" ".join(parts), colour, base if colour == suit_colour else "") for colour, parts in by_colour.items()
     )
     path.write_text(f"{head}{defs}{group}{body}{''.join(accents)}</g></svg>", encoding="utf-8")
     return True

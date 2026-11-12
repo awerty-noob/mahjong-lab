@@ -34,17 +34,11 @@ from .state import State
 # Discard first the tiles with the highest number: honours, then terminals.
 # 2m-8m are not in the wall, so their entries never count.
 PRIORITY_MASK = jnp.array(
-    [5, 4, 3, 2, 1, 2, 3, 4, 5]
-    + [5, 4, 3, 2, 1, 2, 3, 4, 5]
-    + [5, 4, 3, 2, 1, 2, 3, 4, 5]
-    + [6, 7, 7, 7, 6, 6, 6]
+    [5, 4, 3, 2, 1, 2, 3, 4, 5] + [5, 4, 3, 2, 1, 2, 3, 4, 5] + [5, 4, 3, 2, 1, 2, 3, 4, 5] + [6, 7, 7, 7, 6, 6, 6]
 )
 
 OUTSIDE_MASK = jnp.array(
-    [1, 0, 0, 0, 0, 0, 0, 0, 1]
-    + [1, 0, 0, 0, 0, 0, 0, 0, 1]
-    + [1, 0, 0, 0, 0, 0, 0, 0, 1]
-    + [1, 1, 1, 1, 1, 1, 1]
+    [1, 0, 0, 0, 0, 0, 0, 0, 1] + [1, 0, 0, 0, 0, 0, 0, 0, 1] + [1, 0, 0, 0, 0, 0, 0, 0, 1] + [1, 1, 1, 1, 1, 1, 1]
 )
 
 # East and the three dragons.
@@ -111,12 +105,14 @@ def _discard_logic(state: State, unflatten_hand: Array, flatten_hand: Array) -> 
         return jax.lax.cond(
             jnp.logical_or(flatten_hand[i] == 0, shantens[i] != 0),
             lambda: jnp.int32(-1),
-            lambda: jax.vmap(Hand.can_ron, in_axes=(None, 0))(
-                flatten_hand.at[i].set(flatten_hand[i] - 1),
-                jnp.arange(Tile.NUM_TILE_TYPE),
-            )
-            .astype(jnp.int32)
-            .sum(),
+            lambda: (
+                jax.vmap(Hand.can_ron, in_axes=(None, 0))(
+                    flatten_hand.at[i].set(flatten_hand[i] - 1),
+                    jnp.arange(Tile.NUM_TILE_TYPE),
+                )
+                .astype(jnp.int32)
+                .sum()
+            ),
         )
 
     can_rons = jax.vmap(f)(jnp.arange(Tile.NUM_TILE_TYPE))  # (34,)

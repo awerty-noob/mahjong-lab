@@ -13,10 +13,7 @@ from ..helpers import STEP_KEY, compiled_env
 
 
 def _ron_legal_mask(ron_player: int = 0):
-    return (
-        jnp.zeros((4, Action.NUM_ACTION), dtype=jnp.bool_)
-        .at[ron_player, Action.RON].set(True)
-    )
+    return jnp.zeros((4, Action.NUM_ACTION), dtype=jnp.bool_).at[ron_player, Action.RON].set(True)
 
 
 def test_red_auto_single_mode_terminates_like_legacy() -> None:
@@ -207,9 +204,7 @@ def test_red_final_round_runs_on_when_nobody_has_30000() -> None:
 
 def test_red_sudden_death_ends_at_the_last_extra_round() -> None:
     env = compiled_env(round_mode="half", round_end="auto")
-    state = _end_of_round_state(
-        env, round=jnp.int8(11), score=jnp.array([280, 250, 240, 230], dtype=jnp.int32)
-    )
+    state = _end_of_round_state(env, round=jnp.int8(11), score=jnp.array([280, 250, 240, 230], dtype=jnp.int32))
 
     out = _start_next_round_or_end_game(state, jax.random.PRNGKey(0))
 

@@ -67,9 +67,9 @@ rng = jax.random.PRNGKey(0)
 # Initialize environment
 env = mahjax.make(
     "red_4p",
-    round_mode="single", # "single", "east" (tonpuusen), or "half" (hanchan)
-    observe_type="dict", # "dict" for Transformer, "2D" for CNN
-    order_points=[0, 0, 0, 0], # Final score bonuses (uma), in hundreds of points
+    round_mode="single",  # "single", "east" (tonpuusen), or "half" (hanchan)
+    observe_type="dict",  # "dict" for Transformer, "2D" for CNN
+    order_points=[0, 0, 0, 0],  # Final score bonuses (uma), in hundreds of points
 )
 
 init_fn = jax.jit(jax.vmap(env.init))

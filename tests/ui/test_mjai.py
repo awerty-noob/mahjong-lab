@@ -128,9 +128,7 @@ def _play(env_id: str, seed: int) -> Played:
             break
         pre = state
         action = _choose(rules, act, pre, rng, jax.random.fold_in(root, 10_000 + step))
-        state = jax.device_get(
-            step_fn(pre, jnp.int32(action), jax.random.fold_in(root, step + 1))
-        )
+        state = jax.device_get(step_fn(pre, jnp.int32(action), jax.random.fold_in(root, step + 1)))
         events += mjai.encode_step(rules, pre, action, state)
         actions.append(action)
         if hora_step is None and action in (rules.RON, rules.TSUMO):
@@ -159,9 +157,7 @@ def _replay(rules: Rules, seed: int, actions: List[int]) -> Any:
     root = jax.random.PRNGKey(seed)
     state = jax.device_get(env.init(jax.random.fold_in(root, 0)))
     for i, action in enumerate(actions):
-        state = jax.device_get(
-            step_fn(state, jnp.int32(action), jax.random.fold_in(root, i + 1))
-        )
+        state = jax.device_get(step_fn(state, jnp.int32(action), jax.random.fold_in(root, i + 1)))
     return state
 
 
@@ -233,9 +229,7 @@ def test_replaying_the_decoded_actions_reaches_the_same_table(
 ) -> None:
     played = games[(env_id, seed)]
     decoded = mjai.decode_events(played.rules, played.events)
-    assert _table(played.rules, _replay(played.rules, seed, decoded)) == _table(
-        played.rules, played.final
-    )
+    assert _table(played.rules, _replay(played.rules, seed, decoded)) == _table(played.rules, played.final)
 
 
 def test_every_event_is_plain_json(games: Dict[Tuple[str, int], Played]) -> None:
@@ -280,9 +274,7 @@ def test_a_reach_is_accepted_on_a_later_step(games: Dict[Tuple[str, int], Played
         "pai": events[reach + 1]["pai"],
         "tsumogiri": events[reach + 1]["tsumogiri"],
     }
-    accepted = next(
-        e for e in events[reach:] if e["type"] == "reach_accepted" and e["actor"] == actor
-    )
+    accepted = next(e for e in events[reach:] if e["type"] == "reach_accepted" and e["actor"] == actor)
     assert accepted["deltas"][actor] == -1000
     assert sum(accepted["deltas"]) == -1000
 
@@ -310,9 +302,7 @@ def test_a_win_carries_the_scoring_fields(games: Dict[Tuple[str, int], Played]) 
     assert hora["scores"] == played.rules.scores(post)
 
 
-def test_a_truncated_record_replays_as_far_as_it_goes(
-    games: Dict[Tuple[str, int], Played]
-) -> None:
+def test_a_truncated_record_replays_as_far_as_it_goes(games: Dict[Tuple[str, int], Played]) -> None:
     """An unfinished game has no ``end_game``, so the replay must stop, not guess."""
     played = games[("red_4p", 105)]
     decoded = mjai.decode_events(played.rules, played.events[:250])

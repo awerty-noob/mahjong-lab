@@ -145,4 +145,3 @@ def test_observe_dict_returns_relative_view() -> None:
     assert obs["kyotaku"].item() == 4
     assert obs["prevalent_wind"].item() == 1
     assert obs["seat_wind"].item() == 1
-

@@ -162,9 +162,7 @@ class Match:
                 "mahjax_version": mahjax.__version__,
                 "jax": {
                     "version": _jax.__version__,
-                    "threefry_partitionable": bool(
-                        _jax.config.jax_threefry_partitionable
-                    ),
+                    "threefry_partitionable": bool(_jax.config.jax_threefry_partitionable),
                 },
                 "env_id": self.config.env_id,
                 "round_mode": self.config.round_mode,
@@ -253,9 +251,7 @@ class Match:
             is_ron = action == self.rules.RON
             win = view.build_win(self.rules, pre, post, seat, is_ron)
             self._round.wins.append(win)
-        self.events.extend(
-            mjai.encode_step(self.rules, pre, int(action), post, win=win)
-        )
+        self.events.extend(mjai.encode_step(self.rules, pre, int(action), post, win=win))
         self.state = post
         return post
 
@@ -293,15 +289,11 @@ class Match:
             return []
         self.result = None
         self._round_display_state = None
-        self._round = _RoundTrack(
-            score_start=self.rules.scores(self.state), step_start=self.step_index
-        )
+        self._round = _RoundTrack(score_start=self.rules.scores(self.state), step_start=self.step_index)
         self.events.append(mjai.start_kyoku_event(self.rules, self.state))
         return self.advance()
 
-    def set_options(
-        self, *, hide_hands: Optional[bool] = None, no_calls: Optional[bool] = None
-    ) -> None:
+    def set_options(self, *, hide_hands: Optional[bool] = None, no_calls: Optional[bool] = None) -> None:
         if hide_hands is not None:
             self.config.hide_hands = bool(hide_hands)
         if no_calls is not None:
@@ -372,10 +364,7 @@ class Match:
         if self.rules.RON in legal:
             return False
         return all(
-            a == self.rules.PASS
-            or self.rules.is_chi(a)
-            or self.rules.is_pon(a)
-            or a == self.rules.OPEN_KAN
+            a == self.rules.PASS or self.rules.is_chi(a) or self.rules.is_pon(a) or a == self.rules.OPEN_KAN
             for a in legal
         )
 
@@ -415,9 +404,7 @@ class Match:
         reason, seat = view.abortive_cause(self.rules, end_state)
         self._step(self.rules.KYUUSHU)
         game_over = bool(self.state.terminated)
-        self._emit_result(
-            end_state, "abortive", reason, [], game_over, frames, abort_seat=seat
-        )
+        self._emit_result(end_state, "abortive", reason, [], game_over, frames, abort_seat=seat)
 
     def _emit_result(
         self,
@@ -448,9 +435,7 @@ class Match:
 
     def _write_end_game(self, end_state: Any) -> None:
         final = view.final_standings(self.rules, end_state)
-        self.events.append(
-            mjai.end_game_event([entry["score"] for entry in final])
-        )
+        self.events.append(mjai.end_game_event([entry["score"] for entry in final]))
         self.events[0]["mahjax"]["complete"] = True
         if self.config.save_record and self._on_game_over is not None:
             self.record_id = self._on_game_over(self)

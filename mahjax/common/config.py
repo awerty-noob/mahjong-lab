@@ -24,4 +24,3 @@ class GameConfig:
             value = getattr(self, field.name)
             if not isinstance(value, bool):
                 raise TypeError(f"GameConfig.{field.name} must be a Python bool, got {type(value).__name__}")
-

@@ -1,9 +1,9 @@
 """Separate chance-residual VRPO entry point. No work occurs on import/--help.
 
 Examples/configuration are documented separately. These commands are opt-in:
-  python -m train.vrpo calibrate --config CONFIG.json
-  python -m train.vrpo train --config CONFIG.json --artifact CALIBRATED.pkl --sha256 SHA
-  python -m train.vrpo resume --config CONFIG.json --artifact BOUNDARY.pkl --sha256 SHA
+  python -m train.cli calibrate --config CONFIG.json
+  python -m train.cli train --config CONFIG.json --artifact CALIBRATED.pkl --sha256 SHA
+  python -m train.cli resume --config CONFIG.json --artifact BOUNDARY.pkl --sha256 SHA
 """
 
 import argparse
@@ -132,8 +132,8 @@ def run_calibration(options, source_config):
 def _checked_calibrated(payload, template, contract, options, actor):
     import math
 
-    from train.selfplay import actor_sha256, checked_parameters
     from train.calibration import actor_parameter_fingerprint
+    from train.selfplay import actor_sha256, checked_parameters
     from train.update import create_training_state, phase_params
 
     if (
@@ -144,8 +144,8 @@ def _checked_calibrated(payload, template, contract, options, actor):
         or payload.get("critic_trained") is not True
     ):
         raise ValueError("online Actor is blocked until explicit accepted Q calibration")
-    from train.continuation import _equal_contract
     from train.checkpoint import validate_vrpo_contract
+    from train.continuation import _equal_contract
 
     contract = validate_vrpo_contract(contract)
     fields = ("network_config", "head_config", "critic_config", "algorithm_config", "reward_config", "source_versions")
@@ -428,9 +428,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Independent chance-residual VRPO (not legacy PPO)")
     parser.add_argument("mode", choices=("calibrate", "train", "resume", "profile"))
     parser.add_argument("--config", required=True, help="explicit JSON run/algorithm configuration")
-    parser.add_argument(
-        "--artifact", help="accepted calibrated model or exact V5/schema-5 (legacy v2/schema-3) boundary"
-    )
+    parser.add_argument("--artifact", help="accepted calibrated model or exact resume boundary")
     parser.add_argument("--sha256", help="exact artifact SHA256 before deserialization")
     parser.add_argument("--profile-max-seconds", type=int, help="profile-only wall budget, 1..1800")
     args = parser.parse_args(argv)

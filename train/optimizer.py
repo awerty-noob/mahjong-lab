@@ -22,14 +22,13 @@ def param_group_labels(params):
     return {
         "params": {
             name: jax.tree.map(
-                lambda _, group=name: (
-                    "actor" if group in ACTOR_PARAM_ROOTS else "critic"
-                ),
+                lambda _, group=name: "actor" if group in ACTOR_PARAM_ROOTS else "critic",
                 subtree,
             )
             for name, subtree in roots.items()
         }
     }
+
 
 # --- from optimizers.py ---
 

@@ -22,7 +22,6 @@ from jax.custom_batching import sequential_vmap
 
 from mahjax.common.constants import NUM_TILE_TYPES, NUM_TILE_TYPES_WITH_RED
 from mahjax.common.shanten import Shanten
-from mahjax.common.tile import Tile
 from mahjax.mahjong_3p.action import Action
 from mahjax.mahjong_3p.constants import DORA_ARRAY
 from mahjax.mahjong_3p.state import default_state
@@ -162,11 +161,7 @@ def _history_features(obs: Dict) -> Dict:
     prefix_length = valid.sum(dtype=jnp.int32)
     contiguous = jnp.all(valid == (ix < prefix_length))
     overflow = jnp.asarray(obs.get("history_overflow", False), dtype=jnp.bool_)
-    complete = (
-        contiguous
-        & ~overflow
-        & jnp.asarray(obs.get("public_history_complete", ~valid[-1]), dtype=jnp.bool_)
-    )
+    complete = contiguous & ~overflow & jnp.asarray(obs.get("public_history_complete", ~valid[-1]), dtype=jnp.bool_)
     discard = valid & (tsumogiri >= 0) & (action >= 0) & (action < NUM_TILE_TYPES_WITH_RED)
     # 3p history records compact local ids (0..26) plus the red-five ids 27..29.
     # Fold those onto the canonical 34 axis before scattering so the compact
@@ -215,9 +210,7 @@ def _history_features(obs: Dict) -> Dict:
     )(resolved_later)
     # Declaration alone is not accepted riichi: it may still be ron-ed. The
     # existing public riichi flag, not riichi_declared, gates permanent safety.
-    genbutsu = ((counts - pending_counts) > 0) | (
-        (public_safe > 0) & obs["riichi"][:, None] & complete
-    )
+    genbutsu = ((counts - pending_counts) > 0) | ((public_safe > 0) & obs["riichi"][:, None] & complete)
     known_declaration = declared & complete
     compact = jnp.asarray(COMPACT_TO_CANONICAL, jnp.int32)
     return {
@@ -544,9 +537,7 @@ def decode_public_events(obs):
         local_tile_to_canonical(action),
         jnp.where(kan, compact_to_canonical34(action - SELF_KAN_OFFSET), jnp.where(kita, 30, -1)),
     )
-    colour = jnp.where(
-        discard, 1 + _is_red_local(action).astype(jnp.int32), jnp.where(kita, RED_ORDINARY, RED_UNKNOWN)
-    )
+    colour = jnp.where(discard, 1 + _is_red_local(action).astype(jnp.int32), jnp.where(kita, RED_ORDINARY, RED_UNKNOWN))
     previous_tile = jnp.pad(tile[:, :-1], ((0, 0), (1, 0)), constant_values=-1)
     previous_colour = jnp.pad(colour[:, :-1], ((0, 0), (1, 0)))
     previous_actor = jnp.pad(jnp.where(valid, actor, -1)[:, :-1], ((0, 0), (1, 0)), constant_values=-1)

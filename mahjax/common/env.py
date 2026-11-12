@@ -56,9 +56,7 @@ class MahjongEnv(Env):
         if observe_type == "2D":
             raise ValueError("observe type 2D is not developed yet")
         if round_end not in ("auto", "confirm"):
-            raise ValueError(
-                f"round_end must be one of ('auto', 'confirm'), got: {round_end}"
-            )
+            raise ValueError(f"round_end must be one of ('auto', 'confirm'), got: {round_end}")
         self.round_mode = round_mode
         self.one_round = round_mode == "single"
         # The index of the last regular kyoku: one wind of NUM_PLAYERS kyoku for 'east', two otherwise.
@@ -111,7 +109,6 @@ class MahjongEnv(Env):
             order_points=jnp.array(self.order_points, dtype=jnp.int32),
             rewards=jnp.zeros_like(state.rewards),  # Reset rewards to 0 for this step
         )
-
 
         stepped_state = _replace_state(
             self.logic._step(state, action, key, self.game_config, self.round_end),

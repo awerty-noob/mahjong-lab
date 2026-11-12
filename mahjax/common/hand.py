@@ -74,10 +74,40 @@ class Hand:
 
     KYUUSHU_MASK = jnp.array(
         [
-            1, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 0, 0, 0, 1,
-            1, 1, 1, 1, 1, 1, 1,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
         ],
         dtype=jnp.uint8,
     )
@@ -237,13 +267,19 @@ class Hand:
     @staticmethod
     def is_tenpai(hand: Array):
         hand_34 = Hand.to_34(hand)
-        return jax.vmap(lambda tile_type: (hand_34[tile_type] != 4) & Hand.can_ron(hand_34, tile_type))(jnp.arange(Tile.NUM_TILE_TYPE)).any()
+        return jax.vmap(lambda tile_type: (hand_34[tile_type] != 4) & Hand.can_ron(hand_34, tile_type))(
+            jnp.arange(Tile.NUM_TILE_TYPE)
+        ).any()
 
     @staticmethod
     def can_riichi(hand: Array):
         if hand.shape[0] == Tile.NUM_TILE_TYPE_WITH_RED:
-            return jax.vmap(lambda i: (hand[i] != 0) & Hand.is_tenpai(Hand.sub(hand, i)))(jnp.arange(Tile.NUM_TILE_TYPE_WITH_RED)).any()
-        return jax.vmap(lambda i: (hand[i] != 0) & Hand.is_tenpai(Hand.sub(hand, i)))(jnp.arange(Tile.NUM_TILE_TYPE)).any()
+            return jax.vmap(lambda i: (hand[i] != 0) & Hand.is_tenpai(Hand.sub(hand, i)))(
+                jnp.arange(Tile.NUM_TILE_TYPE_WITH_RED)
+            ).any()
+        return jax.vmap(lambda i: (hand[i] != 0) & Hand.is_tenpai(Hand.sub(hand, i)))(
+            jnp.arange(Tile.NUM_TILE_TYPE)
+        ).any()
 
     @staticmethod
     def can_kyuushu(hand: Array) -> Array:
@@ -284,6 +320,7 @@ class Hand:
         tile_type = Tile.to_tile_type(tile)
         chi_idx = Hand._chi_index(action)
         start = tile_type - chi_idx
+
         def _remove(i: Array, h: Array) -> Array:
             return jax.lax.cond(
                 i == tile_type,
@@ -298,6 +335,7 @@ class Hand:
         tile_type = Tile.to_tile_type(tile)
         chi_idx = Hand._chi_index(action)
         start = tile_type - chi_idx
+
         def _remove(i: Array, h: Array) -> Array:
             remove_tile = jax.lax.select(Hand.has_red_of(h, i), Tile.to_red(i), i)
             return jax.lax.cond(

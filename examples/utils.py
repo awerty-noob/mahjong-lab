@@ -54,10 +54,7 @@ def make_eval_fn(env: Env, num_eval_envs: int, max_steps: int = 200):
                 )
 
                 # Rising edge of terminated_round → a hand just resolved.
-                hand_ended = (
-                    next_state.round_state.terminated_round
-                    & ~state.round_state.terminated_round
-                )
+                hand_ended = next_state.round_state.terminated_round & ~state.round_state.terminated_round
                 p = next_state.players
                 won = p.has_won
                 riichi = p.riichi
@@ -74,11 +71,7 @@ def make_eval_fn(env: Env, num_eval_envs: int, max_steps: int = 200):
                 is_ron = is_hora & ((rewards < 0).sum() == 1)
                 is_ryuukyoku = ~is_hora
                 last_player = next_state.round_state.last_player
-                dealt_in_mask = (
-                    jnp.zeros(NUM_PLAYERS, dtype=jnp.bool_)
-                    .at[last_player]
-                    .set(is_ron)
-                )
+                dealt_in_mask = jnp.zeros(NUM_PLAYERS, dtype=jnp.bool_).at[last_player].set(is_ron)
 
                 event = {
                     "hand_ended": hand_ended.astype(jnp.int32),
@@ -100,76 +93,66 @@ def make_eval_fn(env: Env, num_eval_envs: int, max_steps: int = 200):
                 }
                 return (next_state, rng), event
 
-            (final_state, _), events = lax.scan(
-                step_body, (init_state, key), None, length=max_steps
-            )
+            (final_state, _), events = lax.scan(step_body, (init_state, key), None, length=max_steps)
             stats = jax.tree.map(lambda x: x.sum(axis=0), events)
 
             # Final game stats — average rank handles ties symmetrically.
             score = final_state.round_state.score.astype(jnp.float32)
             higher = (score[None, :] > score[:, None]).sum(axis=1)
             ties_inc_self = (score[None, :] == score[:, None]).sum(axis=1)
-            rank = (
-                1.0
-                + higher.astype(jnp.float32)
-                + 0.5 * (ties_inc_self.astype(jnp.float32) - 1.0)
-            )
+            rank = 1.0 + higher.astype(jnp.float32) + 0.5 * (ties_inc_self.astype(jnp.float32) - 1.0)
             gain = score - jnp.float32(STARTING_SCORE)
             return stats, rank, gain
 
         def eval_fn(key) -> Dict[str, jnp.ndarray]:
             k_seat, k_init, k_play = jax.random.split(key, 3)
-            agent_seat = jax.random.randint(
-                k_seat, (num_eval_envs,), 0, NUM_PLAYERS
-            )
+            agent_seat = jax.random.randint(k_seat, (num_eval_envs,), 0, NUM_PLAYERS)
             seats = jnp.arange(NUM_PLAYERS)
             seat_is_a1 = seats[None, :] == agent_seat[:, None]  # (N, P)
 
-            init_states = jax.vmap(init_fn)(
-                jax.random.split(k_init, num_eval_envs)
-            )
+            init_states = jax.vmap(init_fn)(jax.random.split(k_init, num_eval_envs))
             play_keys = jax.random.split(k_play, num_eval_envs)
-            stats, ranks, gains = jax.vmap(play_one)(
-                init_states, seat_is_a1, play_keys
-            )
+            stats, ranks, gains = jax.vmap(play_one)(init_states, seat_is_a1, play_keys)
 
-            n_hands = stats["hand_ended"].astype(jnp.float32)        # (N,)
-            n_hora = stats["hora_hand"].astype(jnp.float32)           # (N,)
-            n_ryuu = stats["ryuu_hand"].astype(jnp.float32)           # (N,)
+            n_hands = stats["hand_ended"].astype(jnp.float32)  # (N,)
+            n_hora = stats["hora_hand"].astype(jnp.float32)  # (N,)
+            n_ryuu = stats["ryuu_hand"].astype(jnp.float32)  # (N,)
             total_hands = n_hands.sum()
 
             def safe_div(num, den):
                 return num / jnp.maximum(den, 1.0)
 
             def per_view(prefix, mask):
-                mf = mask.astype(jnp.float32)             # (N, P)
+                mf = mask.astype(jnp.float32)  # (N, P)
                 player_hands = (n_hands[:, None] * mf).sum()
                 player_ryuu = (n_ryuu[:, None] * mf).sum()
                 n_seats = mf.sum()
+
                 def w(k):
                     return (stats[k].astype(jnp.float32) * mf).sum()
+
                 return {
-                    f"{prefix}/hora_rate":           safe_div(w("won"),         player_hands),
-                    f"{prefix}/deal_in_rate":        safe_div(w("dealt_in"),    player_hands),
+                    f"{prefix}/hora_rate": safe_div(w("won"), player_hands),
+                    f"{prefix}/deal_in_rate": safe_div(w("dealt_in"), player_hands),
                     # Per-event averages, in the same 100-point unit as the score.
                     # Denominator is the number of wins / deal-ins, NOT hands, so these
                     # read as "when it happens, how big is it".
-                    f"{prefix}/avg_win_pts":         safe_div(w("won_pts"),     w("won")),
-                    f"{prefix}/avg_deal_in_pts":     safe_div(-w("dealt_in_pts"), w("dealt_in")),
-                    f"{prefix}/riichi_rate":         safe_div(w("riichi"),      player_hands),
-                    f"{prefix}/meld_rate":           safe_div(w("melded"),      player_hands),
+                    f"{prefix}/avg_win_pts": safe_div(w("won_pts"), w("won")),
+                    f"{prefix}/avg_deal_in_pts": safe_div(-w("dealt_in_pts"), w("dealt_in")),
+                    f"{prefix}/riichi_rate": safe_div(w("riichi"), player_hands),
+                    f"{prefix}/meld_rate": safe_div(w("melded"), player_hands),
                     # Including closed kan, which 副露率 excludes. The gap between the
                     # two is the ankan rate.
-                    f"{prefix}/any_meld_rate":       safe_div(w("any_meld"),    player_hands),
+                    f"{prefix}/any_meld_rate": safe_div(w("any_meld"), player_hands),
                     f"{prefix}/tenpai_at_ryuu_rate": safe_div(w("tenpai_ryuu"), player_ryuu),
-                    f"{prefix}/avg_rank":            safe_div((ranks * mf).sum(), n_seats),
-                    f"{prefix}/avg_gain":            safe_div((gains * mf).sum(), n_seats),
+                    f"{prefix}/avg_rank": safe_div((ranks * mf).sum(), n_seats),
+                    f"{prefix}/avg_gain": safe_div((gains * mf).sum(), n_seats),
                 }
 
             metrics = {
                 "hand/hora_finish_rate": safe_div(n_hora.sum(), total_hands),
-                "hand/ryuukyoku_rate":   safe_div(n_ryuu.sum(), total_hands),
-                "hand/total":            total_hands,
+                "hand/ryuukyoku_rate": safe_div(n_ryuu.sum(), total_hands),
+                "hand/total": total_hands,
             }
             metrics.update(per_view("agent", seat_is_a1))
             metrics.update(per_view("baseline", ~seat_is_a1))

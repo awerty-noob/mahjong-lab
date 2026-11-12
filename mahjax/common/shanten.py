@@ -139,9 +139,7 @@ class Shanten:
         suited = hand[:27].astype(jnp.int32).reshape(3, 9) @ powers
         honors = hand[27:34].astype(jnp.int32) @ powers[2:] + 5**9
         codes = jnp.concatenate([suited, honors[None]])
-        rows = jnp.take(
-            Shanten.CACHE_FLAT, codes[:, None] * 9 + jnp.arange(9, dtype=jnp.int32)
-        ).astype(jnp.int32)
+        rows = jnp.take(Shanten.CACHE_FLAT, codes[:, None] * 9 + jnp.arange(9, dtype=jnp.int32)).astype(jnp.int32)
 
         # Cache columns: four meld increments, pair cost, four increments with a pair.
         zero = jnp.zeros((4, 1), dtype=jnp.int32)

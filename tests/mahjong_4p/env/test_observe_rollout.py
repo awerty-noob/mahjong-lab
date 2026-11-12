@@ -100,8 +100,7 @@ def test_action_history_is_populated_in_every_round(rollout):
     empty_but_should_not_be = [
         (int(s.step_count), int(s.round_state.round))
         for s, o in rollout
-        if int(s.round_state.round_step) > 0
-        and int((np.asarray(o["action_history"])[1] >= 0).sum()) == 0
+        if int(s.round_state.round_step) > 0 and int((np.asarray(o["action_history"])[1] >= 0).sum()) == 0
     ]
     assert empty_but_should_not_be == []
 
@@ -115,8 +114,7 @@ def test_action_history_resets_at_round_boundaries(rollout):
         cursor = int(state.round_state.round_step)
         if prev_key is not None and round_key != prev_key:
             assert cursor < prev_step, (
-                f"cursor did not reset at the {prev_key} -> {round_key} boundary "
-                f"({prev_step} -> {cursor})"
+                f"cursor did not reset at the {prev_key} -> {round_key} boundary ({prev_step} -> {cursor})"
             )
             seen_reset = True
         prev_key, prev_step = round_key, cursor
@@ -211,10 +209,7 @@ def test_last_draw_is_never_another_players_draw(rollout):
         # actually be in their concealed hand.
         assert bool(obs["is_discard_node"]) or bool(state.legal_action_mask[73])
         hand = np.asarray(state.players.hand_with_red[state.current_player])
-        assert hand[shown] > 0, (
-            f"last_draw={shown} reported to seat {int(state.current_player)} "
-            f"who does not hold it"
-        )
+        assert hand[shown] > 0, f"last_draw={shown} reported to seat {int(state.current_player)} who does not hold it"
 
 
 def test_last_draw_is_masked_during_a_robbing_kan_window():
@@ -246,9 +241,7 @@ def test_last_draw_is_masked_during_a_robbing_kan_window():
 
     obs = _observe_dict(state)
     assert not bool(obs["is_discard_node"]), "chankan node is not a discard node"
-    assert int(obs["last_draw"]) == -1, (
-        f"leaked the declarer's draw ({private_draw}) to the responder"
-    )
+    assert int(obs["last_draw"]) == -1, f"leaked the declarer's draw ({private_draw}) to the responder"
     # The public part of the same node is still reported.
     assert int(obs["target"]) == 9
     assert int(obs["last_player"]) == (declarer - responder) % 4
@@ -320,9 +313,6 @@ def test_target_is_present_whenever_a_call_is_legal(rollout):
             assert int(obs["last_player"]) >= 0, "call node with no discarder"
 
 
-
-
-
 def test_melds_match_the_raw_state_and_counts(rollout):
     from mahjax.common.meld import Meld
 
@@ -366,8 +356,6 @@ def test_meld_actions_are_valid_call_ids(rollout):
         assert bool(((srcs >= 0) & (srcs <= 3)).all())
 
 
-
-
 def test_wall_remaining_starts_at_seventy():
     """A fresh round has exactly 70 drawable tiles (136 - 14 dead wall - 13*4 hands)."""
     env = compiled_env(round_mode="half")
@@ -379,9 +367,7 @@ def test_wall_remaining_starts_at_seventy():
 def test_wall_remaining_matches_the_visualization_formula(rollout):
     """Single source of truth: the same count the board renderer prints."""
     for state, obs in rollout:
-        expected = max(
-            int(state.round_state.next_deck_ix) - int(state.round_state.last_deck_ix) + 1, 0
-        )
+        expected = max(int(state.round_state.next_deck_ix) - int(state.round_state.last_deck_ix) + 1, 0)
         assert int(obs["wall_remaining"]) == expected
 
 
@@ -410,9 +396,7 @@ def test_wall_remaining_zero_agrees_with_the_envs_haitei_flag(rollout):
     for state, obs in rollout:
         if bool(state.round_state.is_haitei):
             saw_haitei = True
-            assert int(obs["wall_remaining"]) == 0, (
-                f"is_haitei with {int(obs['wall_remaining'])} tiles left"
-            )
+            assert int(obs["wall_remaining"]) == 0, f"is_haitei with {int(obs['wall_remaining'])} tiles left"
     if not saw_haitei:
         pytest.skip("random rollout never reached haitei")
 
@@ -463,9 +447,7 @@ def _expected_tiles_seen(state) -> np.ndarray:
 
 def test_tiles_seen_matches_an_independent_recount(rollout):
     for state, obs in rollout:
-        np.testing.assert_array_equal(
-            np.asarray(obs["tiles_seen"]).astype(np.int32), _expected_tiles_seen(state)
-        )
+        np.testing.assert_array_equal(np.asarray(obs["tiles_seen"]).astype(np.int32), _expected_tiles_seen(state))
 
 
 def test_tiles_seen_never_exceeds_four(rollout):
@@ -478,9 +460,7 @@ def test_tiles_seen_never_exceeds_four(rollout):
     for state, obs in rollout:
         seen = np.asarray(obs["tiles_seen"])
         assert seen.min() >= 0
-        assert seen.max() <= 4, (
-            f"tile type {int(seen.argmax())} counted {int(seen.max())} times"
-        )
+        assert seen.max() <= 4, f"tile type {int(seen.argmax())} counted {int(seen.max())} times"
 
 
 def test_tiles_seen_counts_a_called_tile_exactly_once(rollout):
@@ -495,9 +475,7 @@ def test_tiles_seen_counts_a_called_tile_exactly_once(rollout):
         if not river[2].any():
             continue
         saw_a_call = True
-        np.testing.assert_array_equal(
-            np.asarray(obs["tiles_seen"]).astype(np.int32), _expected_tiles_seen(state)
-        )
+        np.testing.assert_array_equal(np.asarray(obs["tiles_seen"]).astype(np.int32), _expected_tiles_seen(state))
         # And the naive sum (rivers in full) would have over-counted.
         naive_extra = int(river[2].sum())
         assert naive_extra > 0
@@ -590,9 +568,7 @@ def test_can_win_is_self_only_and_matches_state(rollout):
     """The wait table must be the OBSERVER's row -- exposing all four would leak."""
     for state, obs in rollout:
         c_p = int(state.current_player)
-        np.testing.assert_array_equal(
-            np.asarray(obs["can_win"]), np.asarray(state.players.can_win[c_p])
-        )
+        np.testing.assert_array_equal(np.asarray(obs["can_win"]), np.asarray(state.players.can_win[c_p]))
         assert np.asarray(obs["can_win"]).shape == (34,)
 
 
@@ -600,18 +576,14 @@ def test_can_win_is_consistent_with_tenpai(rollout):
     """A non-empty wait table means tenpai (shanten 0) or a complete hand (-1)."""
     for _, obs in rollout:
         if bool(np.asarray(obs["can_win"]).any()):
-            assert int(obs["shanten_count"]) <= 0, (
-                f"waits present but shanten_count={int(obs['shanten_count'])}"
-            )
+            assert int(obs["shanten_count"]) <= 0, f"waits present but shanten_count={int(obs['shanten_count'])}"
 
 
 def test_ippatsu_and_concealed_are_seat_rotated(rollout):
     for state, obs in rollout:
         c_p = int(state.current_player)
         order = (np.arange(4) + c_p) % 4
-        np.testing.assert_array_equal(
-            np.asarray(obs["ippatsu"]), np.asarray(state.players.ippatsu)[order]
-        )
+        np.testing.assert_array_equal(np.asarray(obs["ippatsu"]), np.asarray(state.players.ippatsu)[order])
         np.testing.assert_array_equal(
             np.asarray(obs["is_hand_concealed"]),
             np.asarray(state.players.is_hand_concealed)[order],
@@ -720,6 +692,4 @@ def test_discard_can_win_agrees_with_discard_shanten(rollout):
         for t in np.flatnonzero(held):
             tenpai_after = ds[t].min() == 0
             has_wait = (d[t] == 1).any()
-            assert has_wait == tenpai_after, (
-                f"tile {t}: wait={has_wait} but shanten-after-discard={ds[t].min()}"
-            )
+            assert has_wait == tenpai_after, f"tile {t}: wait={has_wait} but shanten-after-discard={ds[t].min()}"

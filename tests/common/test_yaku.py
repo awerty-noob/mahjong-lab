@@ -22,12 +22,8 @@ def test_yaku_red_dora_adds_one_fan_without_changing_fu() -> None:
     red_hand = red_hand.at[:34].set(base_hand)
 
     base_state = default_state()
-    black_state = base_state.replace(
-        round_state=base_state.round_state.replace(last_draw=jnp.int8(13))
-    )
-    red_state = base_state.replace(
-        round_state=base_state.round_state.replace(last_draw=jnp.int8(Tile.RED_FIVE['p']))
-    )
+    black_state = base_state.replace(round_state=base_state.round_state.replace(last_draw=jnp.int8(13)))
+    red_state = base_state.replace(round_state=base_state.round_state.replace(last_draw=jnp.int8(Tile.RED_FIVE["p"])))
 
     yaku_black, fan_black, fu_black = Yaku.judge(
         base_hand,
@@ -226,9 +222,7 @@ def test_red_kan_of_fives_scores_no_red_dora_without_red_fives() -> None:
     from mahjax.common.yaku import Yaku as RedYaku
 
     def fan_for(use_red_fives: bool) -> int:
-        env = compiled_env(
-            round_mode="half", game_config=RedGameConfig(use_red_fives=use_red_fives)
-        )
+        env = compiled_env(round_mode="half", game_config=RedGameConfig(use_red_fives=use_red_fives))
         state = env.init(jax.random.PRNGKey(0))
         hand = jnp.zeros((37,), dtype=jnp.int8)
         for tile in (0, 1, 2, 9, 10, 11, 18, 19, 20, 27, 27):
@@ -242,9 +236,7 @@ def test_red_kan_of_fives_scores_no_red_dora_without_red_fives() -> None:
                 target=jnp.int8(27), dora_indicators=jnp.full((5,), -1, dtype=jnp.int8)
             ),
         )
-        _, fan, _ = RedYaku.judge(
-            hand, jnp.bool_(True), jnp.int8(0), state, use_red_fives=use_red_fives
-        )
+        _, fan, _ = RedYaku.judge(hand, jnp.bool_(True), jnp.int8(0), state, use_red_fives=use_red_fives)
         return int(fan)
 
     assert fan_for(False) == fan_for(True) - 1

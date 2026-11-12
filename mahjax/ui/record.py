@@ -60,9 +60,7 @@ def _meta_of(events: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     return meta
 
 
-def save_events(
-    events: Sequence[Dict[str, Any]], *, record_id: Optional[str] = None
-) -> str:
+def save_events(events: Sequence[Dict[str, Any]], *, record_id: Optional[str] = None) -> str:
     meta = _meta_of(events)
     if record_id is None:
         created = meta.get("created_at")
@@ -276,9 +274,7 @@ class Replay:
             frame_idx, end_state, held_wins, held_scores, abortive = pending
             pending = None
             game_over = bool(current.terminated)
-            self._results[frame_idx] = self._round_result(
-                end_state, held_wins, held_scores, game_over, abortive
-            )
+            self._results[frame_idx] = self._round_result(end_state, held_wins, held_scores, game_over, abortive)
             self.rounds.append(
                 RoundSpan(
                     index=round_index,
@@ -313,9 +309,7 @@ class Replay:
             state = jax.device_get(step_fn(pre, jnp.int32(action), key))
             win = None
             if action in (rules.RON, rules.TSUMO):
-                win = view.build_win(
-                    rules, pre, state, int(pre.current_player), action == rules.RON
-                )
+                win = view.build_win(rules, pre, state, int(pre.current_player), action == rules.RON)
                 wins.append(win)
             check(mjai.encode_step(rules, pre, int(action), state, win=win))
 
@@ -351,9 +345,7 @@ class Replay:
                 )
             )
 
-    def _push(
-        self, state: Any, produced_by: Optional[Any], round_index: int
-    ) -> None:
+    def _push(self, state: Any, produced_by: Optional[Any], round_index: int) -> None:
         self._states.append(state)
         if produced_by is None:
             self._steps.append({"roundIndex": round_index, "event": None})
@@ -440,10 +432,7 @@ class Replay:
     ) -> List[Dict[str, Any]]:
         start = max(0, start)
         stop = min(len(self._states), stop)
-        return [
-            self.frame(i, viewpoint=viewpoint, show_all=show_all)
-            for i in range(start, stop)
-        ]
+        return [self.frame(i, viewpoint=viewpoint, show_all=show_all) for i in range(start, stop)]
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -575,18 +564,12 @@ def _same_deal(expected: Dict[str, Any], produced: Dict[str, Any]) -> bool:
     if expected.get("type") != produced.get("type"):
         return False
     if expected["type"] == "tsumo":
-        return expected.get("pai") == produced.get("pai") and expected.get(
-            "actor"
-        ) == produced.get("actor")
+        return expected.get("pai") == produced.get("pai") and expected.get("actor") == produced.get("actor")
     return (
         expected.get("tehais") == produced.get("tehais")
         and expected.get("dora_marker") == produced.get("dora_marker")
         and expected.get("oya") == produced.get("oya")
     )
-
-
-
-
 
 
 def load_replay(record_id: str, *, verify: bool = True) -> Replay:

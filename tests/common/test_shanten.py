@@ -30,8 +30,11 @@ class TestShanten(unittest.TestCase):
                     shanten = jitted_number(hand)
                 else:
                     shanten = jitted_number(hand)
-                self.assertEqual(shanten, expected_shanten,
-                                 f"Shanten mismatch for {shanten_name}: expected {expected_shanten}, got {shanten}")
+                self.assertEqual(
+                    shanten,
+                    expected_shanten,
+                    f"Shanten mismatch for {shanten_name}: expected {expected_shanten}, got {shanten}",
+                )
                 print(shanten_name, "passed")
 
 
@@ -66,6 +69,4 @@ class TestShantenDiscard(unittest.TestCase):
                 else:
                     reduced = hand_j.at[i].add(-1)
                     self.assertEqual(got[i], int(jit_number(reduced)))
-                    np.testing.assert_array_equal(
-                        got_detail[i], np.asarray(jit_detailed_number(reduced))
-                    )
+                    np.testing.assert_array_equal(got_detail[i], np.asarray(jit_detailed_number(reduced)))

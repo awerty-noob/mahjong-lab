@@ -10,18 +10,27 @@ from networks.mahjong_3p.configs import (
     MEDIUM_NETWORK_CONFIG,
     SMALL_NETWORK_CONFIG,
 )
-from train.configs import default_reward_config, rule_spec
 from networks.mahjong_3p.network import build_actor, get_network_cls, observe_for_network
-
 from networks.mahjong_3p.transformer import (
     COMPACT_TO_CANONICAL,
-    ActorCriticNet as V4ACNet,
-    PolicyHead as V4PolicyHead,
-    TransformerBlock as V4Block,
-    TransformerEncoder as V4Encoder,
-    make_actor_critic as make_v4_acnet,
     temporal_rope,
 )
+from networks.mahjong_3p.transformer import (
+    ActorCriticNet as V4ACNet,
+)
+from networks.mahjong_3p.transformer import (
+    PolicyHead as V4PolicyHead,
+)
+from networks.mahjong_3p.transformer import (
+    TransformerBlock as V4Block,
+)
+from networks.mahjong_3p.transformer import (
+    TransformerEncoder as V4Encoder,
+)
+from networks.mahjong_3p.transformer import (
+    make_actor_critic as make_v4_acnet,
+)
+from train.configs import default_reward_config, rule_spec
 from train.optimizer import param_group_labels
 
 TINY = dict(architecture="v5", num_layers=1, d_model=8, num_heads=2, mlp_dim=16)
@@ -29,9 +38,7 @@ TINY = dict(architecture="v5", num_layers=1, d_model=8, num_heads=2, mlp_dim=16)
 
 @pytest.fixture(scope="module")
 def bundle():
-    env = rule_spec("sanma").make_env(
-        "half", reward_config=default_reward_config("sanma")
-    )
+    env = rule_spec("sanma").make_env("half", reward_config=default_reward_config("sanma"))
     state = env.init(jax.random.PRNGKey(410))
     obs = observe_for_network(env, state, TINY)
     model = get_network_cls("sanma", **TINY)()
@@ -68,9 +75,10 @@ def test_rope_identity_and_relative_translation():
     k = jax.random.normal(jax.random.key(413), q.shape)
     positions = jnp.broadcast_to(jnp.arange(-5, 0), (2, 5))
     np.testing.assert_allclose(temporal_rope(q, jnp.zeros_like(positions)), q)
+
     def score(shift):
-        return jnp.einsum("bthd,bshd->bhts", temporal_rope(q, positions + shift),
-                                         temporal_rope(k, positions + shift))
+        return jnp.einsum("bthd,bshd->bhts", temporal_rope(q, positions + shift), temporal_rope(k, positions + shift))
+
     np.testing.assert_allclose(score(0), score(13), atol=2e-6)
     with pytest.raises(ValueError, match="even"):
         temporal_rope(jnp.zeros((1, 1, 1, 3)), jnp.zeros((1, 1)))
@@ -91,8 +99,7 @@ def test_padding_does_not_change_valid_attention_outputs():
 
 def test_canonical_and_red_action_gather(bundle):
     _, _, obs, _, _ = bundle
-    features = {"summary": jnp.ones((1, 8)),
-                "tiles": jax.random.normal(jax.random.key(416), (1, 34, 8))}
+    features = {"summary": jnp.ones((1, 8)), "tiles": jax.random.normal(jax.random.key(416), (1, 34, 8))}
     head = V4PolicyHead(8)
     params = head.init(jax.random.key(417), features, obs)
     logits, state = head.apply(params, features, obs, capture_intermediates=True, mutable=["intermediates"])
@@ -114,10 +121,13 @@ def test_v4_factory_and_direct_defaults_are_m_with_heads():
     assert make_v4_acnet(head_config={"version": 0})().head_config == {"version": 0}
 
 
-@pytest.mark.parametrize("config,width,layers,count", [
-    (None, 256, 12, 22_254_485),
-    (MEDIUM_NETWORK_CONFIG, 192, 8, 8_823_893),
-])
+@pytest.mark.parametrize(
+    "config,width,layers,count",
+    [
+        (None, 256, 12, 22_254_485),
+        (MEDIUM_NETWORK_CONFIG, 192, 8, 8_823_893),
+    ],
+)
 def test_default_l_and_explicit_m_abstract_shapes_without_full_compute(bundle, config, width, layers, count):
     _, _, obs, _, _ = bundle
     model = get_network_cls("sanma", **(config or {}))()
@@ -136,8 +146,7 @@ def test_auxiliary_heads_initialized_by_public_call_and_skipped_at_inference(bun
     from flax.errors import ScopeParamNotFoundError
 
     _, _, obs, model, variables = bundle
-    assert set(variables["params"]) == {
-        "policy_extractor", "policy_mlp", "critic_extractor", "value_critic_mlp"}
+    assert set(variables["params"]) == {"policy_extractor", "policy_mlp", "critic_extractor", "value_critic_mlp"}
     for root in ("policy_mlp", "value_critic_mlp"):
         aux = variables["params"][root]["auxiliary"]
         assert set(aux) == {"hidden", "rank", "score"}
@@ -145,10 +154,11 @@ def test_auxiliary_heads_initialized_by_public_call_and_skipped_at_inference(bun
         assert aux["rank"]["kernel"].shape == (128, 3)
         assert aux["score"]["kernel"].shape == (128, 1)
     # Missing auxiliary leaves cannot be silently created by an inference apply.
-    inference_params = {"params": {
-        root: {k: v for k, v in leaves.items() if k != "auxiliary"}
-        for root, leaves in variables["params"].items()
-    }}
+    inference_params = {
+        "params": {
+            root: {k: v for k, v in leaves.items() if k != "auxiliary"} for root, leaves in variables["params"].items()
+        }
+    }
     actual = model.apply(inference_params, obs)
     expected = model.apply(variables, obs)
     for x, y in zip(actual, expected):
@@ -158,15 +168,17 @@ def test_auxiliary_heads_initialized_by_public_call_and_skipped_at_inference(bun
 
 
 def test_auxiliary_batch_shapes_actor_only_and_single_critic_forward(bundle):
-    
+
     _, _, obs, model, variables = bundle
     observations = jax.tree.map(lambda x: jnp.stack([x, x]), obs)
     logits, values = model.apply(variables, observations)
     actor = {"params": {k: variables["params"][k] for k in ("policy_extractor", "policy_mlp")}}
-    actor_logits, actor_aux = jax.jit(lambda p, o: model.apply(
-        p, o, method=model.get_action_and_aux))(actor, observations)
-    critic_values, critic_aux = jax.jit(lambda p, o: model.apply(
-        p, o, method=model.get_value_and_aux))(variables, observations)
+    actor_logits, actor_aux = jax.jit(lambda p, o: model.apply(p, o, method=model.get_action_and_aux))(
+        actor, observations
+    )
+    critic_values, critic_aux = jax.jit(lambda p, o: model.apply(p, o, method=model.get_value_and_aux))(
+        variables, observations
+    )
     np.testing.assert_allclose(actor_logits, logits, atol=2e-6)
     np.testing.assert_allclose(critic_values, values, atol=2e-6)
     for aux in (actor_aux, critic_aux):
@@ -175,7 +187,9 @@ def test_auxiliary_batch_shapes_actor_only_and_single_critic_forward(bundle):
         assert aux["score_delta"].shape == (2,)
         assert all(np.isfinite(x).all() for x in jax.tree.leaves(aux))
     outputs, captured = model.apply(
-        variables, observations, method=model.get_training_outputs,
+        variables,
+        observations,
+        method=model.get_training_outputs,
         capture_intermediates=lambda module, method: isinstance(module, V4Encoder),
         mutable=["intermediates"],
     )
@@ -197,8 +211,7 @@ def test_auxiliary_gradients_stay_on_their_own_side(bundle, side):
         return jnp.square(aux["rank_logits"]).sum() + jnp.square(aux["score_delta"]).sum()
 
     grads = jax.jit(jax.grad(loss))(variables)["params"]
-    active = ("policy_extractor", "policy_mlp") if side == "actor" else (
-        "critic_extractor", "value_critic_mlp")
+    active = ("policy_extractor", "policy_mlp") if side == "actor" else ("critic_extractor", "value_critic_mlp")
     inactive = set(grads) - set(active)
     assert all(np.isfinite(x).all() for x in jax.tree.leaves(grads))
     for root in inactive:
@@ -206,8 +219,7 @@ def test_auxiliary_gradients_stay_on_their_own_side(bundle, side):
     for root in active:
         assert any(np.any(np.asarray(x) != 0) for x in jax.tree.leaves(grads[root]))
     for branch in ("hidden", "rank", "score"):
-        assert any(np.any(np.asarray(x) != 0)
-                   for x in jax.tree.leaves(grads[active[1]]["auxiliary"][branch]))
+        assert any(np.any(np.asarray(x) != 0) for x in jax.tree.leaves(grads[active[1]]["auxiliary"][branch]))
 
 
 def test_legacy_disabled_heads_use_exact_old_tree_and_empty_aux(bundle):
@@ -215,13 +227,13 @@ def test_legacy_disabled_heads_use_exact_old_tree_and_empty_aux(bundle):
     legacy = build_actor(TINY, head_config={"version": 0})
     assert legacy.head_config == {"version": 0}
     initialized = jax.jit(legacy.init)(jax.random.key(419), obs)
-    assert all("auxiliary" not in initialized["params"][root]
-               for root in ("policy_mlp", "value_critic_mlp"))
+    assert all("auxiliary" not in initialized["params"][root] for root in ("policy_mlp", "value_critic_mlp"))
     # Existing pre-head trees are accepted without implicit migration.
-    old_tree = {"params": {
-        root: {k: v for k, v in leaves.items() if k != "auxiliary"}
-        for root, leaves in variables["params"].items()
-    }}
+    old_tree = {
+        "params": {
+            root: {k: v for k, v in leaves.items() if k != "auxiliary"} for root, leaves in variables["params"].items()
+        }
+    }
     for method in (legacy.get_action_and_aux, legacy.get_value_and_aux):
         _, aux = legacy.apply(old_tree, obs, method=method)
         assert aux == {}
@@ -232,8 +244,7 @@ def test_legacy_disabled_heads_use_exact_old_tree_and_empty_aux(bundle):
 
 def test_direct_model_init_eager_includes_custom_aux_width(bundle):
     _, _, obs, _, _ = bundle
-    model = V4ACNet(num_layers=1, d_model=8, num_heads=2, mlp_dim=16,
-                    head_config={"version": 1, "hidden_dim": 5})
+    model = V4ACNet(num_layers=1, d_model=8, num_heads=2, mlp_dim=16, head_config={"version": 1, "hidden_dim": 5})
     initialized = model.init(jax.random.key(420), obs)
     for root in ("policy_mlp", "value_critic_mlp"):
         assert initialized["params"][root]["auxiliary"]["hidden"]["kernel"].shape == (8, 5)

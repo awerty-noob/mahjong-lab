@@ -44,7 +44,7 @@ def compiled_env(round_mode="half", round_end="auto", order_points=(0, 0, 0, 0),
     return _compiled_env(round_mode, round_end, tuple(order_points), RED if game_config is None else game_config)
 
 
-_RINSHAN_TILE = 12                                   # 4p
+_RINSHAN_TILE = 12  # 4p
 
 
 # Concealed remainder after ankan-ing 1m out of 1111m 234m 567m 99m 56p.
@@ -66,7 +66,7 @@ def _post_ankan_state(wall_left_after_rinshan, *, kan_dora_pre_flipped=False):
     counts37 = jnp.zeros(37, dtype=state.players.hand_with_red.dtype)
     for t in _POST_ANKAN_HAND:
         counts37 = counts37.at[t].add(1)
-    n_kan = state.players.n_kan.sum()                # 0: rinshan is deck[10]
+    n_kan = state.players.n_kan.sum()  # 0: rinshan is deck[10]
     deck = state.round_state.deck.at[10 + n_kan].set(jnp.int8(_RINSHAN_TILE))
     # In the pre-flipped branch ``_kan`` already advanced the boundary, so the
     # state entering ``_draw_rinshan`` carries it and the call leaves it be.

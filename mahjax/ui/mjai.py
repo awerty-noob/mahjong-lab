@@ -143,9 +143,7 @@ def start_kyoku_events(rules: Rules, state: Any) -> List[Event]:
     events = [start_kyoku_event(rules, state)]
     drawn = int(state.round_state.last_draw)
     if drawn >= 0:
-        events.append(
-            {"type": "tsumo", "actor": int(state.round_state.dealer), "pai": tile_to_mjai(drawn)}
-        )
+        events.append({"type": "tsumo", "actor": int(state.round_state.dealer), "pai": tile_to_mjai(drawn)})
     return events
 
 
@@ -198,22 +196,14 @@ def encode_step(
         events.extend(_dora_events(rules, pre_state, post_state))
         drawn = _drawn_tile(rules, pre_state, post_state)
         if drawn is not None:
-            events.append(
-                {"type": "tsumo", "actor": int(post_state.current_player), "pai": tile_to_mjai(drawn)}
-            )
+            events.append({"type": "tsumo", "actor": int(post_state.current_player), "pai": tile_to_mjai(drawn)})
 
     if action in (rules.RON, rules.TSUMO):
         events.append(_hora_event(rules, pre_state, post_state, action, win))
     elif is_kyuushu:
-        events.append(
-            _ryukyoku_event(
-                rules, pre_state, post_state, _abortive_reason(rules, pre_state), pre_state
-            )
-        )
+        events.append(_ryukyoku_event(rules, pre_state, post_state, _abortive_reason(rules, pre_state), pre_state))
     elif _is_exhaustive_draw(rules, pre_state, post_state):
-        events.append(
-            _ryukyoku_event(rules, pre_state, post_state, EXHAUSTIVE_DRAW, post_state)
-        )
+        events.append(_ryukyoku_event(rules, pre_state, post_state, EXHAUSTIVE_DRAW, post_state))
     return events
 
 
@@ -301,9 +291,7 @@ def _drawn_tile(rules: Rules, pre_state: Any, post_state: Any) -> Optional[int]:
     they have passed and the turn is back with the kita's player.
     """
     from_wall = int(post_state.round_state.next_deck_ix) < int(pre_state.round_state.next_deck_ix)
-    from_dead_wall = int(np.asarray(post_state.players.n_kan).sum()) > int(
-        np.asarray(pre_state.players.n_kan).sum()
-    )
+    from_dead_wall = int(np.asarray(post_state.players.n_kan).sum()) > int(np.asarray(pre_state.players.n_kan).sum())
     if rules.KITA is not None:
         pre_rs, post_rs = pre_state.round_state, post_state.round_state
         set_aside = int(np.asarray(post_state.players.kita).sum()) > int(np.asarray(pre_state.players.kita).sum())
@@ -358,9 +346,7 @@ def _hora_event(
     return event
 
 
-def _ryukyoku_event(
-    rules: Rules, pre_state: Any, post_state: Any, reason: str, hands_from: Any
-) -> Event:
+def _ryukyoku_event(rules: Rules, pre_state: Any, post_state: Any, reason: str, hands_from: Any) -> Event:
     tenpai = rules.tenpai(hands_from)
     return {
         "type": "ryukyoku",
@@ -428,9 +414,7 @@ def _deltas(rules: Rules, pre_state: Any, post_state: Any) -> List[int]:
 # ------------------------------------------------------------------ decoding
 
 
-def decode_events(
-    rules: Rules, events: Sequence[Event], *, env: Any = None, step_fn: Any = None
-) -> List[int]:
+def decode_events(rules: Rules, events: Sequence[Event], *, env: Any = None, step_fn: Any = None) -> List[int]:
     """The env action sequence that reproduces ``events``.
 
     Driven by the env rather than read straight off the log, because ``PASS`` and
@@ -500,9 +484,7 @@ def mahjax_meta(events: Sequence[Event]) -> Dict[str, Any]:
     return {}
 
 
-def _decide(
-    rules: Rules, state: Any, events: Sequence[Event], cursor: int
-) -> Tuple[int, Optional[int]]:
+def _decide(rules: Rules, state: Any, events: Sequence[Event], cursor: int) -> Tuple[int, Optional[int]]:
     legal = set(rules.legal_actions(state))
     at = _next_action_index(events, cursor)
     action = _event_action(rules, state, events[at]) if at < len(events) else None
@@ -544,9 +526,7 @@ def _event_action(rules: Rules, state: Any, event: Event) -> Optional[int]:
     if kind == "pon":
         return _call_action(rules, state, event, rules.pon_actions, rules.pon_tiles)
     if kind == "chi":
-        return _call_action(
-            rules, state, event, [a for a, _, _ in rules.chi_actions], rules.chi_tiles
-        )
+        return _call_action(rules, state, event, [a for a, _, _ in rules.chi_actions], rules.chi_tiles)
     return None
 
 

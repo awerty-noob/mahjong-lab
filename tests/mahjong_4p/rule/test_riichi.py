@@ -28,9 +28,9 @@ def _riichi_ready_state(**round_overrides):
     state = _init(State, jax.random.PRNGKey(5))
     c_p = int(state.current_player)
     counts37 = jnp.zeros(37, dtype=state.players.hand_with_red.dtype)
-    for t in list(range(9)) + [9, 10, 11]:          # 1-9m, 123p
+    for t in list(range(9)) + [9, 10, 11]:  # 1-9m, 123p
         counts37 = counts37.at[t].set(1)
-    counts37 = counts37.at[13].set(2)               # 55p (plain)
+    counts37 = counts37.at[13].set(2)  # 55p (plain)
     hand_with_red = state.players.hand_with_red.at[c_p].set(counts37)
     state = _replace_state(
         state,
@@ -42,8 +42,7 @@ def _riichi_ready_state(**round_overrides):
 
 
 def _mask(state, c_p, hand, **kw):
-    return _mask_after_draw(
-        state, hand, jnp.int32(c_p), jnp.int8(13), **kw)
+    return _mask_after_draw(state, hand, jnp.int32(c_p), jnp.int8(13), **kw)
 
 
 def test_the_crafted_hand_can_riichi_at_all():
@@ -75,10 +74,8 @@ def test_explicit_live_draws_left_overrides_the_derivation():
     """The rinshan call site passes its own count (dead-wall draw: next is
     untouched, last already advanced -> between-turns formula)."""
     state, c_p, hand = _riichi_ready_state()
-    assert not bool(_mask(state, c_p, hand,
-                          live_draws_left=jnp.int32(3))[Action.RIICHI])
-    assert bool(_mask(state, c_p, hand,
-                      live_draws_left=jnp.int32(4))[Action.RIICHI])
+    assert not bool(_mask(state, c_p, hand, live_draws_left=jnp.int32(3))[Action.RIICHI])
+    assert bool(_mask(state, c_p, hand, live_draws_left=jnp.int32(4))[Action.RIICHI])
 
 
 # --- the rinshan call site, end to end ------------------------------------
@@ -98,11 +95,7 @@ def test_rinshan_riichi_gate_matches_the_live_wall_after_the_kan():
         for wall_left in range(1, 8):
             state, c_p = _post_ankan_state(wall_left, kan_dora_pre_flipped=pre_flipped)
             out = _draw_rinshan(state)
-            remaining = (
-                int(out.round_state.next_deck_ix)
-                - int(out.round_state.last_deck_ix)
-                + 1
-            )
+            remaining = int(out.round_state.next_deck_ix) - int(out.round_state.last_deck_ix) + 1
             assert remaining == wall_left, (pre_flipped, wall_left, remaining)
             riichi = bool(out.players.legal_action_mask[c_p, Action.RIICHI])
             assert riichi == (wall_left >= 4), (pre_flipped, wall_left, riichi)
@@ -120,9 +113,7 @@ def _riichi_draw_state(concealed: list[int], drawn: int):
     hand_with_red = jnp.zeros((37,), dtype=jnp.int8)
     for tile in concealed:
         hand_with_red = hand_with_red.at[tile].add(1)
-    can_win = jax.vmap(Hand.can_ron, in_axes=(None, 0))(
-        Hand.to_34(hand_with_red), jnp.arange(34)
-    )
+    can_win = jax.vmap(Hand.can_ron, in_axes=(None, 0))(Hand.to_34(hand_with_red), jnp.arange(34))
     hand_with_red = hand_with_red.at[drawn].add(1)
     state = default_state()
     state = state.replace(

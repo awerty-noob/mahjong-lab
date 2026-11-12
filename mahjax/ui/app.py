@@ -271,9 +271,7 @@ def _register_records(app: FastAPI, sessions: _Sessions) -> None:
             return {
                 "replayId": replay.id,
                 "from": start,
-                "frames": replay.frames(
-                    start, end, viewpoint=viewpoint, show_all=show_all
-                ),
+                "frames": replay.frames(start, end, viewpoint=viewpoint, show_all=show_all),
             }
 
     @app.delete("/api/replays/{replay_id}")

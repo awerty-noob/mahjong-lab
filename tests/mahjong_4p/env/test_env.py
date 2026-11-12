@@ -58,6 +58,7 @@ def test_red_default_is_auto() -> None:
 
 def test_red_invalid_style_raises() -> None:
     import pytest as _pytest
+
     with _pytest.raises(ValueError):
         Mahjong4p(round_end="bogus")  # type: ignore[arg-type]
 

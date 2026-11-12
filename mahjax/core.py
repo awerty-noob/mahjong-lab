@@ -239,9 +239,7 @@ def make(env_id: EnvId, **kwargs) -> "Union[Mahjong4p, Mahjong3p]":  # noqa: C90
             return env_cls(game_config=env_cls.NO_RED, **kwargs)
         return env_cls(**kwargs)
     else:
-        raise ValueError(
-            f"Wrong env_id '{env_id}' is passed. Available ids are: \n{available_envs()}"
-        )
+        raise ValueError(f"Wrong env_id '{env_id}' is passed. Available ids are: \n{available_envs()}")
 
 
 def rule_based_player(state: Any, rng: PRNGKey) -> Array:
