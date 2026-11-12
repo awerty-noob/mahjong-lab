@@ -49,6 +49,27 @@ def _new_output(options, source_config, *, mode, artifact=None, sha256=None):
     return output
 
 
+def _metrics_output_path(options, output):
+    """Resolve the online metrics destination and create its parent directory."""
+    if options.metrics_path is None:
+        return output / "metrics.jsonl"
+    path = Path(options.metrics_path)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _tensorboard_root(options, output):
+    """Resolve the TensorBoard run root; learner/baseline live below it."""
+    if options.tensorboard_dir is None:
+        return output / "tensorboard"
+    path = Path(options.tensorboard_dir)
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    return path
+
+
 def run_calibration(options, source_config):
     import jax
 
@@ -129,6 +150,15 @@ def run_calibration(options, source_config):
         collector.close()
 
 
+def _calibration_algorithm_identity(config):
+    """Return the algorithm fields that must survive BC-to-online calibration."""
+    if not isinstance(config, dict):
+        return config
+    return {
+        key: config.get(key) for key in ("version", "kind", "optimizer", "gamma", "trace_lambda", "reading_auxiliary")
+    }
+
+
 def _checked_calibrated(payload, template, contract, options, actor):
     import math
 
@@ -148,11 +178,17 @@ def _checked_calibrated(payload, template, contract, options, actor):
     from train.continuation import _equal_contract
 
     contract = validate_vrpo_contract(contract)
-    fields = ("network_config", "head_config", "critic_config", "algorithm_config", "reward_config", "source_versions")
+    fields = ("network_config", "head_config", "critic_config", "reward_config")
     if contract["network_config"]["architecture"] == "v5":
         fields += ("reading_config", "optimizer_config")
     for name in fields:
         _equal_contract(payload.get(name), contract[name], "calibrated artifact contract mismatch: " + name)
+    if _calibration_algorithm_identity(payload.get("algorithm_config")) != _calibration_algorithm_identity(
+        contract["algorithm_config"]
+    ):
+        raise ValueError("calibrated artifact contract mismatch: algorithm_config")
+    if not isinstance(payload.get("source_versions"), dict):
+        raise ValueError("calibrated artifact is missing source_versions provenance")
     for name, expected in contract["environment_config"].items():
         if payload.get(name) != expected:
             raise ValueError("calibrated environment mismatch")
@@ -260,7 +296,17 @@ def run_online(options, source_config, *, mode, artifact, sha256):
             raise ValueError("boundary lacks accepted original-BC calibration lineage")
         state, rng, progress, lineage = candidate.state, candidate.rng, candidate.progress, candidate.lineage
     del payload
+    from train import eval as evaluation
+    from train.configs import default_reward_config, rule_spec
+
+    eval_env = rule_spec("sanma").make_env(
+        "half",
+        reward_config=default_reward_config("sanma"),
+        round_end="confirm",
+    )
+    baseline_params = evaluation.load_baseline_params(options, eval_env, state)
     output = _new_output(options, source_config, mode=mode, artifact=artifact, sha256=sha256)
+    tensorboard_root = _tensorboard_root(options, output)
     collector = CompleteGameCollector(env, model, options)
     updater = VRPOUpdater(model, options.algorithm)
     store = None
@@ -318,7 +364,7 @@ def run_online(options, source_config, *, mode, artifact, sha256):
             ),
         )
         publish(state, rng, progress, collection_state)  # initial online boundary, AFTER accepted calibration
-        with (output / "metrics.jsonl").open("x", encoding="utf-8") as metrics:
+        with _metrics_output_path(options, output).open("x", encoding="utf-8") as metrics:
             while (
                 not actor_stalled
                 and not stopped()
@@ -361,6 +407,24 @@ def run_online(options, source_config, *, mode, artifact, sha256):
                     "trace": qboost_page.cache_info()._asdict(),
                     "actor_stall_updates": actor_progress.consecutive,
                 }
+                eval_result = None
+                if progress["completed_updates"] % options.eval_interval == 0:
+                    eval_started = time.monotonic()
+                    eval_result = evaluation.run_dual_evaluation(
+                        eval_env,
+                        model,
+                        state.params,
+                        baseline_params,
+                        nums_eval=options.nums_eval,
+                        seed=options.seed ^ 0x4556414C,
+                    )
+                    eval_result["update"] = progress["completed_updates"]
+                    eval_result["wall_seconds"] = time.monotonic() - eval_started
+                    eval_result["tensorboard"] = evaluation.write_tensorboard(
+                        tensorboard_root,
+                        progress["completed_updates"],
+                        eval_result,
+                    )
                 row = dict(
                     progress=progress,
                     collection=info,
@@ -368,6 +432,9 @@ def run_online(options, source_config, *, mode, artifact, sha256):
                     execution=execution,
                     wall_seconds=time.monotonic() - started,
                 )
+                if eval_result is not None:
+                    row["eval"] = eval_result
+                evaluation.write_training_tensorboard(tensorboard_root, progress["completed_updates"], row)
                 metrics.write(json.dumps(row, allow_nan=False) + "\n")
                 metrics.flush()
                 del batch, result, info, next_rng, next_collection
@@ -430,18 +497,25 @@ def main(argv=None):
     parser.add_argument("--config", required=True, help="explicit JSON run/algorithm configuration")
     parser.add_argument("--artifact", help="accepted calibrated model or exact resume boundary")
     parser.add_argument("--sha256", help="exact artifact SHA256 before deserialization")
+    parser.add_argument("--metrics-path", help="online metrics.jsonl destination (train/resume only)")
     parser.add_argument("--profile-max-seconds", type=int, help="profile-only wall budget, 1..1800")
     args = parser.parse_args(argv)
     if args.mode in ("train", "resume") and (not args.artifact or not args.sha256):
         parser.error("train/resume require --artifact and --sha256")
     if args.mode in ("calibrate", "profile") and (args.artifact or args.sha256):
         parser.error("calibrate/profile initialize from config's ORIGINAL BC, not a trained artifact")
+    if args.metrics_path is not None and args.mode not in ("train", "resume"):
+        parser.error("--metrics-path requires train or resume mode")
     if args.profile_max_seconds is not None and (args.mode != "profile" or not 1 <= args.profile_max_seconds <= 1800):
         parser.error("--profile-max-seconds requires profile mode and must be 1..1800")
     source = Path(args.config).read_text(encoding="utf-8")
+    from dataclasses import replace
+
     from train.selfplay import VRPORunConfig
 
     options = VRPORunConfig.from_dict(json.loads(source, object_pairs_hook=_json_object))
+    if args.metrics_path is not None:
+        options = replace(options, metrics_path=args.metrics_path)
     if args.mode == "profile":
         from train.vrpo_profile import run_profile
 

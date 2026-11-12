@@ -253,7 +253,15 @@ class RuleSpec:
     full_game_round_mode: Optional[str]  # None: step-mode rollouts only
     default_architecture: str
 
-    def make_env(self, round_mode: str, observe_type: str = "dict", reward_config=None):
+    def make_env(
+        self,
+        round_mode: str,
+        observe_type: str = "dict",
+        reward_config=None,
+        round_end: str = "auto",
+    ):
+        if round_end not in ("auto", "confirm"):
+            raise ValueError(f"round_end must be one of ('auto', 'confirm'), got: {round_end}")
         if self.name == "sanma":
             config = validate_reward_config(reward_config, self.name)
             # Configuration is raw points; the environment settles in hundreds.
@@ -263,8 +271,14 @@ class RuleSpec:
                 round_mode=round_mode,
                 observe_type=observe_type,
                 order_points=order_points,
+                round_end=round_end,
             )
-        return mahjax.make(ENV_IDS.get(self.name, self.name), round_mode=round_mode, observe_type=observe_type)
+        return mahjax.make(
+            ENV_IDS.get(self.name, self.name),
+            round_mode=round_mode,
+            observe_type=observe_type,
+            round_end=round_end,
+        )
 
     def validate_full_game(self, round_mode: str) -> None:
         if self.full_game_round_mode is None:

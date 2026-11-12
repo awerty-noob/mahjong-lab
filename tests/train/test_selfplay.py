@@ -112,6 +112,8 @@ def test_run_config_explicit_nested_algorithm_roundtrip_and_budget_defaults():
     assert type(loaded.algorithm) is VRPOConfig
     assert loaded.algorithm.preset == "tiny_debug"
     assert loaded.min_free_bytes == 4 * 1024**3
+    assert loaded.metrics_path is None
+    assert loaded.tensorboard_dir is None
     assert not hasattr(loaded, "history_capacity")
     assert not hasattr(loaded, "opponent_pool")
     assert not hasattr(loaded, "snapshot_envsteps")
@@ -119,6 +121,20 @@ def test_run_config_explicit_nested_algorithm_roundtrip_and_budget_defaults():
     data = cfg.to_dict()
     data["algorithm"]["t_eta"] = 999
     assert cfg.algorithm.t_eta == 2
+
+
+def test_run_config_metrics_path_roundtrip():
+    cfg = options(metrics_path="tensorboard/run/metrics.jsonl")
+    loaded = runtime.VRPORunConfig.from_dict(cfg.to_dict())
+    assert loaded == cfg
+    assert loaded.metrics_path == "tensorboard/run/metrics.jsonl"
+
+
+def test_run_config_tensorboard_dir_roundtrip():
+    cfg = options(tensorboard_dir="/root/tf-logs/run-1")
+    loaded = runtime.VRPORunConfig.from_dict(cfg.to_dict())
+    assert loaded == cfg
+    assert loaded.tensorboard_dir == "/root/tf-logs/run-1"
 
 
 @pytest.mark.parametrize(
@@ -166,6 +182,13 @@ def test_run_config_rejects_unknown_fields_and_inferred_production_horizons(wher
         dict(max_wall_seconds=float("inf")),
         dict(bc_path=""),
         dict(output_dir=""),
+        dict(metrics_path=""),
+        dict(metrics_path="   "),
+        dict(metrics_path=1),
+        dict(metrics_path=True),
+        dict(tensorboard_dir=""),
+        dict(tensorboard_dir="   "),
+        dict(tensorboard_dir=1),
         dict(run_id=""),
         dict(bc_sha256="A" * 64),
         dict(algorithm={}),

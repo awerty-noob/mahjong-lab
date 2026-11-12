@@ -1571,6 +1571,12 @@ class VRPORunConfig:
     bc_sha256: str
     output_dir: str
     run_id: str
+    metrics_path: str | None = None
+    tensorboard_dir: str | None = None
+    eval_interval: int = 5
+    baseline_model: str | None = None
+    baseline_sha256: str | None = None
+    nums_eval: int = 30
     seed: int = 0
     max_updates: int | None = None
     max_wall_seconds: float | None = None
@@ -1583,6 +1589,24 @@ class VRPORunConfig:
         for name in ("bc_path", "output_dir", "run_id"):
             if not isinstance(getattr(self, name), str) or not getattr(self, name):
                 raise ValueError(name + " must be explicit")
+        if self.metrics_path is not None and (not isinstance(self.metrics_path, str) or not self.metrics_path.strip()):
+            raise ValueError("metrics_path must be a nonempty path string or null")
+        if self.tensorboard_dir is not None and (
+            not isinstance(self.tensorboard_dir, str) or not self.tensorboard_dir.strip()
+        ):
+            raise ValueError("tensorboard_dir must be a nonempty path string or null")
+        for name in ("eval_interval", "nums_eval"):
+            if type(getattr(self, name)) is not int or getattr(self, name) <= 0:
+                raise ValueError(name + " must be a positive integer")
+        if self.baseline_model is not None and (
+            not isinstance(self.baseline_model, str) or not self.baseline_model.strip()
+        ):
+            raise ValueError("baseline_model must be a nonempty path string or null")
+        if self.baseline_model is None:
+            if self.baseline_sha256 is not None:
+                raise ValueError("baseline_sha256 requires baseline_model")
+        else:
+            _digest(self.baseline_sha256)
         _digest(self.bc_sha256)
         if type(self.seed) is not int or not 0 <= self.seed < 2**32:
             raise ValueError("seed must be a uint32-range integer")

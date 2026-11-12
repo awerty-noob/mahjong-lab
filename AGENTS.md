@@ -8,7 +8,7 @@
 
 - `mahjax/`：环境、规则、状态和原始观测。三人麻将入口是 `mahjax.mahjong_3p`。
 - `networks/`：网络侧代码。`networks.mahjong_3p` 包含特征化、actor/critic、Transformer 和 Central-Q。
-- `train/`：BC 初始化、自对弈收集、Q calibration、VRPO 更新、checkpoint 和 CLI。
+- `train/`：BC 初始化、自对弈收集、Q calibration、VRPO 更新、checkpoint、在线评测和 CLI。
 - `tests/networks/`、`tests/train/`：迁移后的契约测试。
 
 不要把 `networks/` 或 `train/` 当成上游 MahJax 的稳定公共 API；它们仍在快速演进，修改时必须同时跑对应测试。
@@ -64,6 +64,7 @@ JAX_PLATFORMS=cpu .venv/bin/python -m pytest -q
 | `train/calibration.py` | Q calibration、接受门槛、actor fingerprint |
 | `train/update.py` | VRPO/Paged VRPO 更新 |
 | `train/checkpoint.py` | contract 校验、model/resume checkpoint |
+| `train/eval.py` | online 双向 greedy 评测、baseline 加载、TensorBoard 标量写出 |
 | `train/cli.py` | `calibrate` / `train` / `resume` 编排入口 |
 | `train/health.py` | actor 停滞保护 |
 | `data/` | 本地模型和实验数据；被 `.gitignore` 忽略 |
@@ -143,7 +144,12 @@ full 34/35/36     -> compact 4/6/15
 注意：
 
 - 输出目录由 config 里的 `output_dir` 指定，CLI 没有 `--output-dir` 参数；该目录必须是尚不存在的目录，`_new_output` 使用 `mkdir(exist_ok=False)`。
+- online metrics 默认写到 `<output_dir>/metrics.jsonl`；可用 config 的 `metrics_path` 或 CLI 的 `--metrics-path` 指定其他文件。相对路径按进程 cwd 解析，父目录会自动创建；目标文件已存在时拒绝覆盖。
 - online 运行的 config 必须显式设置 `max_updates` 或 `max_wall_seconds`，否则会拒绝启动；CLI 没有对应的 `--max-updates` / `--max-wall-seconds` 参数。
+- 每完成 `eval_interval` 个 update，`train/eval.py` 会在 online 循环里对 baseline 做双向 greedy 评测：两个方向各 `nums_eval` 局，共 `2*nums_eval` 局。双方都必须用 `argmax` 选动作，不能采样；评测环境使用 `round_end="confirm"`，否则会跳过中间的和了/流局事件。
+- 评测结果写入该 update 的 `metrics.jsonl` 行的 `eval` 字段；`eval.learner` 和 `eval.baseline` 各含同一组指标。装了 `tensorboard` 时还会写 TensorBoard run root 下的 `learner` 和 `baseline` 两个子目录，两边使用相同 tag，因此在 TensorBoard 中同一指标显示为两条曲线。run root 默认是 `<output_dir>/tensorboard`，可用 config 的 `tensorboard_dir` 覆盖；相对路径按进程 cwd 解析。
+- 装了 `tensorboard` 时，每个 completed update 还会把该行的训练字段写入 learner run 的 `train/*`：嵌套字段用 `/` 连接（如 `train/progress/envsteps`、`train/update/actor_steps`、`train/execution/cache/hits`），标量 `wall_seconds` 写成 `train/wall_seconds`；`eval` 子树不会重复写成 `train/eval/*`。
+- eval 相关 config 字段：`eval_interval`（默认 5）、`baseline_model`（默认当前 online 起始 boundary；也可给 checkpoint 路径）、`baseline_sha256`（给路径时必填）、`nums_eval`（默认 30）；TensorBoard 相关字段是 `tensorboard_dir`（默认 `<output_dir>/tensorboard`）。`baseline_model` 的 SHA 与 `bc_sha256` 一样在反序列化前校验。
 - 每个完整 update 才产生可 resume 的 boundary；中断的 rollout 不是 resume 点。
 - 训练产物、日志和 `data/` 不应提交。模型文件提交前先确认 `.gitignore` 和仓库策略。
 - checkpoint 加载前校验 SHA-256；不要直接 `pickle.load` 未经校验的外部文件。
