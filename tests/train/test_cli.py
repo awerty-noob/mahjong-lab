@@ -62,10 +62,33 @@ def test_calibration_algorithm_identity_allows_online_hyperparameters():
         "reading_auxiliary": True,
         "actor_lr": 2.5e-05,
         "rollout_games": 8,
+        "execution_layout": {"version": 2, "kind": "paged_interleaved_games", "page_rows": 64},
     }
-    online = base | {"actor_lr": 4e-4, "rollout_games": 512, "tempo_anchor": False}
+    online = base | {
+        "actor_lr": 4e-4,
+        "rollout_games": 512,
+        "tempo_anchor": False,
+        "execution_layout": {"version": 2, "kind": "paged_interleaved_games", "page_rows": 2048},
+    }
     assert cli._calibration_algorithm_identity(base) == cli._calibration_algorithm_identity(online)
     assert cli._calibration_algorithm_identity(base | {"version": 2}) != cli._calibration_algorithm_identity(online)
+    changed_layout = base | {"execution_layout": {"version": 2, "kind": "flat_reference", "page_rows": 64}}
+    assert cli._calibration_algorithm_identity(base) != cli._calibration_algorithm_identity(changed_layout)
+
+
+def test_calibration_report_requires_one_complete_final_epoch_run():
+    scores = [0.17, 0.26, 0.26]
+    report = {
+        "best_epoch": 2,
+        "epochs_completed": 2,
+        "max_epochs": 2,
+        "epoch_heldout_mse": [0.20, 0.17],
+    }
+    cli._check_calibration_report(report, scores, 0.0)
+    with pytest.raises(ValueError, match="final-epoch"):
+        cli._check_calibration_report(report | {"best_epoch": 1}, scores, 0.0)
+    with pytest.raises(ValueError, match="history"):
+        cli._check_calibration_report(report | {"epoch_heldout_mse": [0.20]}, scores, 0.0)
 
 
 def test_cli_metrics_path_overrides_config(tmp_path, monkeypatch):

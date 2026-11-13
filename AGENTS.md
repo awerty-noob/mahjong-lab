@@ -74,12 +74,9 @@ JAX_PLATFORMS=cpu .venv/bin/python -m pytest -q
 ### 5.1 原始模拟器侧
 
 - 三人麻将模拟器的动作空间是 **88**，其中 `Action.KITA = 87`。
-- 原始观测使用 canonical-34 牌轴；标量牌 id（如 `last_draw`、`target`、`dora_indicators`、meld target）使用三人麻将本地 red-aware id：
-  - `0..26`：普通牌；
-  - `27`：红 5m（sanma 不发放，视为无效）；
-  - `28`：红 5p；
-  - `29`：红 5s。
+- 原始观测使用 canonical-34 牌轴；标量牌 id（如 `last_draw`、`target`、`dora_indicators`、meld target、deck）使用 canonical `0..33` 加红五 `34/35/36`，不是 30 槽的 local red 布局。
 - `state.players.hand` 是 34 计数；`hand_with_red` 使用 37 槽的全量 red id（红五为 34/35/36）。
+- 30 槽的 `27/28/29` red 布局只属于网络侧的 compact action/tile ABI（见 5.3），不要拿它解释原始观测标量。
 
 ### 5.2 网络侧
 
@@ -116,7 +113,10 @@ compact 27 (red 5m) -> canonical 4
 ## 6. V5 / VRPO 契约
 
 - 当前生产架构是 `v5`；网络、特征和 checkpoint 只维护当前 ABI，不增加兼容分支。
-- 标准 algorithm 配置：
+- v5 骨架也支持非 reading 的旧算法 schema：此时 contract 不包含 `reading_config`，算法为
+  `{"version": 2, "kind": "vrpo_qboost_chance_residual_v2", "reading_auxiliary": False}`。
+  只有 `reading_auxiliary=True` 才要求 `reading_config` 和 reading head。
+- 标准 reading algorithm 配置：
 
 ```python
 {"version": 5, "kind": "vrpo_actor_reading_v5", "reading_auxiliary": True}
@@ -151,7 +151,7 @@ compact 27 (red 5m) -> canonical 4
 - 每完成 `eval_interval` 个 update，`train/eval.py` 会在 online 循环里对 baseline 做双向 greedy 评测：两个方向各 `nums_eval` 局，共 `2*nums_eval` 局。双方都必须用 `argmax` 选动作，不能采样；评测环境使用 `round_end="confirm"`，否则会跳过中间的和了/流局事件。
 - 评测结果写入该 update 的 `metrics.jsonl` 行的 `eval` 字段；`eval.learner` 和 `eval.baseline` 各含同一组指标。装了 `tensorboard` 时还会写 TensorBoard run root 下的 `learner` 和 `baseline` 两个子目录，两边使用相同 tag，因此在 TensorBoard 中同一指标显示为两条曲线。run root 默认是 `<output_dir>/tensorboard`，可用 config 的 `tensorboard_dir` 覆盖；相对路径按进程 cwd 解析。
 - 装了 `tensorboard` 时，每个 completed update 还会把该行的训练字段写入 learner run 的 `train/*`：嵌套字段用 `/` 连接（如 `train/progress/envsteps`、`train/update/actor_steps`、`train/execution/cache/hits`），标量 `wall_seconds` 写成 `train/wall_seconds`；`eval` 子树不会重复写成 `train/eval/*`。
-- eval 相关 config 字段：`eval_interval`（默认 5）、`baseline_model`（默认当前 online 起始 boundary；也可给 checkpoint 路径）、`baseline_sha256`（给路径时必填）、`nums_eval`（默认 30）；TensorBoard 相关字段是 `tensorboard_dir`（默认 `<output_dir>/tensorboard`）。`baseline_model` 的 SHA 与 `bc_sha256` 一样在反序列化前校验。
+- eval 相关 config 字段：`eval_interval`（默认 5）、`baseline_model`（默认本次 online 起始的 BC actor；也可给 checkpoint 路径）、`baseline_sha256`（给路径时必填）、`nums_eval`（默认 30）；TensorBoard 相关字段是 `tensorboard_dir`（默认 `<output_dir>/tensorboard`）。`baseline_model` 的 SHA 与 `bc_sha256` 一样在反序列化前校验。
 - 每个完整 update 才产生可 resume 的 boundary；中断的 rollout 不是 resume 点。
 - 训练产物、日志和 `data/` 不应提交。模型文件提交前先确认 `.gitignore` 和仓库策略。
 - checkpoint 加载前校验 SHA-256；不要直接 `pickle.load` 未经校验的外部文件。
@@ -198,7 +198,7 @@ JAX_PLATFORMS=cpu .venv/bin/python -m pytest -q \
   tests/train/test_calibration.py
 ```
 
-- 修改公开行为或 ABI 后，在提交前跑全量测试。最近一次全量基线是 `811 passed, 1 skipped, 21 subtests passed`。
+- 修改公开行为或 ABI 后，在提交前跑全量测试。最近一次全量基线是 `818 passed, 1 skipped, 21 subtests passed`。
 - 测试中的 JAX/NumPy 数值断言优先用 `jnp.allclose` / 明确 tolerance，不要依赖精确浮点相等。
 
 ## 9. 当前已知限制

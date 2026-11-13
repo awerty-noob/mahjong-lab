@@ -155,19 +155,19 @@ def compact_observation(raw: Mapping[str, Any]) -> dict:
     # Set-aside norths are public dead tiles but are no longer in any hand, river,
     # or meld array the simulator's tiles_seen walks.
     raw_kita = jnp.asarray(raw["kita"], jnp.int8)
-    kita_total = (
-        raw_kita.sum(dtype=jnp.int8) if raw_kita.ndim == 1 else raw_kita.sum(axis=-1, dtype=jnp.int8)[..., None]
-    )
-    observation["tiles_seen"] = observation["tiles_seen"].at[NORTH_LOCAL_ID].add(kita_total)
+    kita_total = raw_kita.sum(axis=-1, dtype=jnp.int8)
+    observation["tiles_seen"] = observation["tiles_seen"].at[..., NORTH_LOCAL_ID].add(kita_total)
     observation["discard_shanten"] = compact_tile_axis(raw["discard_shanten"], axis=-2)
     observation["discard_can_win"] = compact_tile_axis(compact_tile_axis(raw["discard_can_win"], axis=-2), axis=-1)
     observation["dora_indicators"] = canonical_tile_to_compact(raw["dora_indicators"])
     observation["last_draw"] = canonical_tile_to_compact(raw["last_draw"])
     observation["target"] = canonical_tile_to_compact(raw["target"])
     melds = jnp.asarray(raw["melds"], jnp.int32)
-    # Channel 0 is the simulator action, channel 1 the canonical target type.
-    melds = melds.at[..., 0].set(canonical_action_to_compact(melds[..., 0]))
-    melds = melds.at[..., 1].set(canonical_tile_to_compact(melds[..., 1]))
+    # Melds are (channels, seats, slots); channel 0 is the simulator action and
+    # channel 1 the canonical target type.  Index the channel axis explicitly:
+    # ``at[..., 0]`` would rewrite slot 0 across every channel.
+    melds = melds.at[..., 0, :, :].set(canonical_action_to_compact(melds[..., 0, :, :]))
+    melds = melds.at[..., 1, :, :].set(canonical_tile_to_compact(melds[..., 1, :, :]))
     observation["melds"] = melds
     kita = jnp.asarray(raw["kita"], jnp.int8)
     observation["n_kita"] = kita

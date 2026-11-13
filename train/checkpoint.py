@@ -782,12 +782,21 @@ def validate_vrpo_contract(contract):
     architecture = config["architecture"]
     if architecture not in ("v4", "v5"):
         raise ValueError("VRPO requires explicit network architecture v4 or v5")
-    fields = _CONTRACT_FIELDS | ({"reading_config"} if architecture == "v5" else set())
+    raw_algorithm = contract.get("algorithm_config")
+    if not isinstance(raw_algorithm, Mapping) or type(raw_algorithm.get("reading_auxiliary")) is not bool:
+        raise ValueError("algorithm_config.reading_auxiliary must be an explicit bool")
+    reading_enabled = raw_algorithm["reading_auxiliary"] is True
+    if reading_enabled and architecture != "v5":
+        raise ValueError("VRPO reading auxiliary requires network architecture v5")
+    # A v5 backbone can still be trained with the legacy non-reading algorithm
+    # schema.  Only the algorithms that actually enable reading carry a reading
+    # config in the contract.
+    fields = _CONTRACT_FIELDS | ({"reading_config"} if reading_enabled else set())
     _mapping(contract, "contract", required=fields, exact=True)
     if contract["head_config"] is None:
         raise ValueError("head_config must be explicit, not inferred")
     validate_head_config(contract["head_config"], architecture)
-    if architecture == "v5":
+    if reading_enabled:
         if contract["reading_config"] is None:
             raise ValueError("V5 reading_config must be explicit, not inferred")
         validate_reading_config(contract["reading_config"], architecture)
@@ -808,7 +817,7 @@ def validate_vrpo_contract(contract):
     from .configs import ALGORITHM_KIND
 
     algorithm = contract["algorithm_config"]
-    if architecture == "v5":
+    if architecture == "v5" and reading_enabled:
         validate_v5_reading_algorithm(algorithm)
     elif (
         type(algorithm.get("version")) is not int
@@ -990,6 +999,58 @@ def build_vrpo_resume(state, rng, *, contract, progress, collection_state, reten
     }
 
 
+def _is_resume_abi_source(path):
+    """Files whose bytes define the numerical training ABI for resume."""
+    if path.startswith(("mahjax/", "networks/")):
+        return True
+    if path.startswith("train/") and path.endswith(".py"):
+        return path not in ("train/cli.py", "train/eval.py")
+    return False
+
+
+def _check_resume_source_versions(actual_versions, expected_versions):
+    """Compare implementation hashes while allowing CLI/eval-only edits."""
+    if not isinstance(actual_versions, dict) or not actual_versions:
+        raise ValueError("resume boundary is missing source_versions provenance")
+    actual_hashes = actual_versions.get("implementation_sha256")
+    expected_hashes = expected_versions.get("implementation_sha256")
+    if isinstance(actual_hashes, dict) and isinstance(expected_hashes, dict):
+        missing = {path for path in set(expected_hashes) - set(actual_hashes) if _is_resume_abi_source(path)}
+        if missing:
+            raise ValueError("config_contract mismatch: source_versions missing files")
+        for path in set(actual_hashes) - set(expected_hashes):
+            if _is_resume_abi_source(path):
+                raise ValueError(f"config_contract mismatch: unexpected ABI source {path}")
+        for path, digest in expected_hashes.items():
+            if _is_resume_abi_source(path) and actual_hashes[path] != digest:
+                raise ValueError(f"config_contract mismatch: source_versions[{path}]")
+        return
+    # Synthetic/older contracts without per-file implementation hashes keep the
+    # original strict provenance comparison.
+    _equal_contract(actual_versions, expected_versions, "source_versions")
+
+
+_PAGE_ROWS_IGNORED = "<page_rows_ignored>"
+
+
+def _resume_config_contract(contract):
+    """Drop paging-generation tuning that does not alter the learned objective."""
+    result = {key: value for key, value in contract.items() if key != "source_versions"}
+    algorithm = result.get("algorithm_config")
+    if isinstance(algorithm, dict):
+        algorithm = dict(algorithm)
+        layout = algorithm.get("execution_layout")
+        if isinstance(layout, dict):
+            rows = layout.get("page_rows")
+            algorithm["execution_layout"] = dict(layout)
+            if type(rows) is int and rows > 0:
+                # Paging generation is a runtime tuning knob; preserve a marker so
+                # that an actually missing or malformed knob is still rejected.
+                algorithm["execution_layout"]["page_rows"] = _PAGE_ROWS_IGNORED
+        result["algorithm_config"] = algorithm
+    return result
+
+
 def restore_vrpo_resume(payload, template_state, *, contract):
     """Validate EVERYTHING before returning an independent immutable candidate.
 
@@ -1017,28 +1078,9 @@ def restore_vrpo_resume(payload, template_state, *, contract):
     # CLI/eval-only edits do not make an otherwise valid boundary unusable.
     actual_versions = actual.get("source_versions")
     expected_versions = expected["source_versions"]
-    if not isinstance(actual_versions, dict) or not actual_versions:
-        raise ValueError("resume boundary is missing source_versions provenance")
-    actual_hashes = actual_versions.get("implementation_sha256")
-    expected_hashes = expected_versions.get("implementation_sha256")
-    if isinstance(actual_hashes, dict) and isinstance(expected_hashes, dict):
-        missing = set(expected_hashes) - set(actual_hashes)
-        extra = set(actual_hashes) - set(expected_hashes)
-        if missing:
-            raise ValueError("config_contract mismatch: source_versions missing files")
-        for path in extra:
-            if path.startswith(("mahjax/", "networks/")) or path == "train/selfplay.py":
-                raise ValueError(f"config_contract mismatch: unexpected ABI source {path}")
-        for path, digest in expected_hashes.items():
-            if path.startswith(("mahjax/", "networks/")) or path == "train/selfplay.py":
-                if actual_hashes[path] != digest:
-                    raise ValueError(f"config_contract mismatch: source_versions[{path}]")
-    else:
-        # Synthetic/older contracts without per-file implementation hashes keep
-        # the original strict provenance comparison.
-        _equal_contract(actual_versions, expected_versions, "source_versions")
-    actual_contract = {key: value for key, value in actual.items() if key != "source_versions"}
-    expected_contract = {key: value for key, value in expected.items() if key != "source_versions"}
+    _check_resume_source_versions(actual_versions, expected_versions)
+    actual_contract = _resume_config_contract(actual)
+    expected_contract = _resume_config_contract(expected)
     _equal_contract(actual_contract, expected_contract, "config_contract")
     if type(template_state) is not VRPOTrainingState:
         raise ValueError("template_state must be the dynamic-only VRPOTrainingState")
@@ -1077,6 +1119,11 @@ def build_vrpo_model(params, *, contract, metadata=None):
         if key in metadata and (type(metadata[key]) is not type(required) or metadata[key] != required):
             raise ValueError(f"ordinary vrpo_model metadata.{key} must be {required!r}")
         metadata[key] = required
+    extra = {}
+    if config["network_config"]["architecture"] == "v5":
+        extra["optimizer_config"] = config["optimizer_config"]
+    if config["algorithm_config"].get("reading_auxiliary") is True:
+        extra["reading_config"] = config["reading_config"]
     return {
         "checkpoint_kind": VRPO_MODEL_KIND,
         "schema_version": 1,
@@ -1091,11 +1138,7 @@ def build_vrpo_model(params, *, contract, metadata=None):
                 "source_versions",
             )
         },
-        **(
-            {key: config[key] for key in ("reading_config", "optimizer_config")}
-            if config["network_config"]["architecture"] == "v5"
-            else {}
-        ),
+        **extra,
         **config["environment_config"],
         "params": _host_tree(params, "params"),
         "metadata": metadata,

@@ -210,6 +210,11 @@ def _score_wait_candidates(pending, judge):
     return danger, points
 
 
+def _discard_action_available(legal_action_mask):
+    """Whether a draw decision can discard an actual tile (raw 88-action mask)."""
+    return legal_action_mask[:37].any() | legal_action_mask[Action.TSUMOGIRI]
+
+
 def build_reading_targets(pre_state):
     """Build unbatched ReadingTargets from the current full sanma EnvState.
 
@@ -224,7 +229,7 @@ def build_reading_targets(pre_state):
     p, rs = s.players, s.round_state
     opponents = (s.current_player.astype(jnp.int32) + jnp.array([1, 2])) % 3
     live = ~(s.terminated | s.truncated | rs.terminated_round)
-    discard_now = s.legal_action_mask[:30].any() | s.legal_action_mask[Action.TSUMOGIRI]
+    discard_now = _discard_action_available(s.legal_action_mask)
     pending_indicator = rs.n_kan_doras.astype(jnp.int32) < p.n_kan.astype(jnp.int32).sum()
     danger_context = live & discard_now & ~pending_indicator & ~rs.kan_declared & ~rs.kita_declared
     houtei = rs.is_haitei | (rs.next_deck_ix < rs.last_deck_ix.astype(jnp.int32))

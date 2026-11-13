@@ -17,6 +17,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from mahjax.mahjong_3p.action import Action
+
 from networks.mahjong_3p.network import (
     compact_legal_mask,
     to_simulator_action,
@@ -108,31 +110,49 @@ def _run_focal_pass(
 
         prev_terminated = state.round_state.terminated_round
         hand_end = next_state.round_state.terminated_round & ~prev_terminated & active
+        special_draw = active & (to_simulator_action(chosen) == Action.KYUUSHU)
+        record_hand = hand_end | special_draw
         rewards = next_state.rewards
         rows = jnp.arange(n)
         focal_reward = rewards[rows, focal]
-        # Tenpai exhaustive-draw payments are +20/-10/-10, not a win.
         won = hand_end & next_state.players.has_won.any(axis=-1)
-        n_negative = jnp.sum(rewards < 0, axis=-1)
-        ron = won & (n_negative == 1)
+        # A pao ron can charge two players and a pao tsumo only one, so reward
+        # counts cannot classify the win.  ``target`` is the ron tile and is -1
+        # after a draw; ``last_player`` is the discarder for ron.
+        ron = won & (next_state.round_state.target >= 0)
+        tsumo = won & ~ron
         focal_win = won & (focal_reward > 0)
-        deal_in = ron & (focal_reward < 0)
-        focal_riichi = next_state.players.riichi[rows, focal]
-        focal_concealed = next_state.players.is_hand_concealed[rows, focal]
-        turn = jnp.sum(next_state.players.discard_counts, axis=-1) / 3.0
+        deal_in = ron & (next_state.round_state.last_player == focal)
+        # Special abortive draws transition directly into the next hand; use the
+        # pre-transition state for their hand-level flags and turn count.
+        focal_riichi = jnp.where(
+            special_draw,
+            state.players.riichi[rows, focal],
+            next_state.players.riichi[rows, focal],
+        )
+        focal_concealed = jnp.where(
+            special_draw,
+            state.players.is_hand_concealed[rows, focal],
+            next_state.players.is_hand_concealed[rows, focal],
+        )
+        turn = jnp.where(
+            special_draw,
+            jnp.sum(state.players.discard_counts, axis=-1) / 3.0,
+            jnp.sum(next_state.players.discard_counts, axis=-1) / 3.0,
+        )
 
         stats = carry["stats"]
-        stats = _add(stats, "hands", 1.0, hand_end)
+        stats = _add(stats, "hands", 1.0, record_hand)
         stats = _add(stats, "wins", 1.0, focal_win)
         stats = _add(stats, "deal_ins", 1.0, deal_in)
-        stats = _add(stats, "riichi_hands", 1.0, hand_end & focal_riichi)
-        stats = _add(stats, "meld_hands", 1.0, hand_end & ~focal_concealed)
-        stats = _add(stats, "draws", 1.0, hand_end & ~won)
-        stats = _add(stats, "tsumo_hands", 1.0, focal_win & (n_negative > 1))
+        stats = _add(stats, "riichi_hands", 1.0, record_hand & focal_riichi)
+        stats = _add(stats, "meld_hands", 1.0, record_hand & ~focal_concealed)
+        stats = _add(stats, "draws", 1.0, record_hand & ~won)
+        stats = _add(stats, "tsumo_hands", 1.0, focal_win & tsumo)
         stats = _add(stats, "damaten_hands", 1.0, focal_win & ~focal_riichi & focal_concealed)
         stats = _add(stats, "win_pts", focal_reward * 100.0, focal_win)
         stats = _add(stats, "deal_in_pts", -focal_reward * 100.0, deal_in)
-        stats = _add(stats, "turn_sum", turn, hand_end)
+        stats = _add(stats, "turn_sum", turn, record_hand)
 
         next_done = next_state.terminated | next_state.truncated | (carry["steps"] + 1 >= max_steps)
         next_failed = carry["failed"] | (
@@ -286,7 +306,7 @@ def load_baseline_params(options, env, state, *, sample_state=None, contract=Non
         from train.continuation import _equal_contract
 
         for name in ("network_config", "head_config", "reading_config"):
-            if name in checkpoint:
+            if name in checkpoint and name in contract:
                 _equal_contract(checkpoint.get(name), contract[name], "baseline checkpoint contract mismatch: " + name)
     if sample_state is None:
         sample_state = env.init(jax.random.PRNGKey(0))

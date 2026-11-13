@@ -1,6 +1,7 @@
 """Golden simulator-to-network mappings used by training and evaluation."""
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 
 from networks.mahjong_3p.feature import COMPACT_TO_CANONICAL
@@ -48,6 +49,62 @@ def test_tile_mapping_golden():
     assert int(compact_tile_to_canonical(27)) == 4
     assert int(compact_tile_to_canonical(28)) == 13
     assert int(compact_tile_to_canonical(29)) == 22
+
+
+def test_meld_mapping_is_channel_axis_not_slot_axis():
+    env = rule_spec("sanma").make_env("half", reward_config=default_reward_config("sanma"))
+    state = env.init(jax.random.PRNGKey(0))
+    raw = dict(env.observe(state))
+    raw["melds"] = jnp.full((3, 3, 4), -1, jnp.int32)
+    # Slot 0: PON_RED 5s (76), target red 5s (36), source 1.
+    # Slot 1: closed self-kan 5p (50), target 5p (13), source 0.
+    # Channel 2 (src) and the empty sentinel must remain untouched.
+    raw["melds"] = (
+        raw["melds"]
+        .at[0, 0, 0]
+        .set(76)
+        .at[1, 0, 0]
+        .set(36)
+        .at[2, 0, 0]
+        .set(1)
+        .at[0, 0, 1]
+        .set(50)
+        .at[1, 0, 1]
+        .set(13)
+        .at[2, 0, 1]
+        .set(0)
+    )
+    melds = compact_observation(raw)["melds"]
+    assert int(melds[0, 0, 0]) == 76
+    assert int(melds[1, 0, 0]) == 29
+    assert int(melds[2, 0, 0]) == 1
+    assert int(melds[0, 0, 1]) == 36
+    assert int(melds[1, 0, 1]) == 6
+    assert int(melds[2, 0, 1]) == 0
+    assert int(melds[0, 1, 1]) == -1 and int(melds[1, 1, 1]) == -1
+
+
+def test_compact_observation_is_batched_and_adds_kita_to_tiles_seen():
+    env = rule_spec("sanma").make_env("half", reward_config=default_reward_config("sanma"))
+    keys = jax.random.split(jax.random.PRNGKey(0), 2)
+    states = jax.vmap(env.init)(keys)
+    raws = dict(jax.vmap(env.observe)(states))
+    raws["kita"] = jnp.zeros_like(raws["kita"]).at[0, 0].set(2)
+    raws["melds"] = jnp.full_like(raws["melds"], -1).at[0, 0, 0, 0].set(76).at[0, 1, 0, 0].set(36)
+    obs = compact_observation(raws)
+    assert obs["tiles_seen"].shape == (2, 27)
+    assert obs["melds"].shape == (2, 3, 3, 4)
+    assert int(obs["melds"][0, 0, 0, 0]) == 76
+    assert int(obs["melds"][0, 1, 0, 0]) == 29
+    assert int(obs["melds"][1, 0, 0, 0]) == -1
+    # North is compact 23; the two set-aside tiles are public dead tiles.
+    first = jax.tree.map(lambda value: value[0], states)
+    second = jax.tree.map(lambda value: value[1], states)
+    base0 = int(compact_observation(env.observe(first))["tiles_seen"][23])
+    base1 = int(compact_observation(env.observe(second))["tiles_seen"][23])
+    assert int(obs["tiles_seen"][0, 23]) == base0 + 2
+    assert int(obs["tiles_seen"][1, 23]) == base1
+    assert int(obs["n_kita"][0, 0]) == 2 and int(obs["n_kita"][1, 0]) == 0
 
 
 def test_live_mask_and_observation_use_the_same_abi():

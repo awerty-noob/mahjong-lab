@@ -21,6 +21,7 @@ from train.checkpoint import (
     VRPO_RESUME_KIND,
     VRPO_V5_RESUME_SCHEMA_VERSION,
     VRPOResumeResult,
+    _check_resume_source_versions,
     build_vrpo_model,
     build_vrpo_resume,
     restore_vrpo_resume,
@@ -69,6 +70,41 @@ def make_contract():
         "source_versions": {"implementation_sha256": "a" * 64, "jax": jax.__version__, "flax": "test", "optax": "test"},
         "retention_enabled": True,
     }
+
+
+def test_v5_backbone_can_run_non_reading_algorithm_without_reading_config(case):
+    contract = copy.deepcopy(case["contract"])
+    contract["algorithm_config"] = {
+        "version": 2,
+        "kind": "vrpo_qboost_chance_residual_v2",
+        "reading_auxiliary": False,
+    }
+    contract.pop("reading_config")
+    model = build_vrpo_model(case["state"].params, contract=contract)
+    assert "reading_config" not in model
+    assert model["algorithm_config"]["version"] == 2
+    assert model["optimizer_config"] == contract["optimizer_config"]
+
+
+def test_resume_source_hashes_protect_train_but_allow_cli_and_eval():
+    expected = {
+        "implementation_sha256": {
+            "train/update.py": "a" * 64,
+            "train/cli.py": "b" * 64,
+            "train/eval.py": "c" * 64,
+        }
+    }
+    actual = copy.deepcopy(expected)
+    actual["implementation_sha256"]["train/cli.py"] = "d" * 64
+    actual["implementation_sha256"]["train/eval.py"] = "e" * 64
+    _check_resume_source_versions(actual, expected)
+    actual["implementation_sha256"]["train/update.py"] = "f" * 64
+    with pytest.raises(ValueError, match=r"source_versions\[train/update.py\]"):
+        _check_resume_source_versions(actual, expected)
+    actual = copy.deepcopy(expected)
+    actual["implementation_sha256"]["train/new_module.py"] = "0" * 64
+    with pytest.raises(ValueError, match="unexpected ABI source train/new_module.py"):
+        _check_resume_source_versions(actual, expected)
 
 
 @jax.jit
@@ -460,3 +496,24 @@ def test_collection_state_is_detached_on_export_and_restore(case):
     result = restore(case)
     case["payload"]["collection_state"]["next_game_id"] = 99
     assert result.collection_state["next_game_id"] == case["kwargs"]["collection_state"]["next_game_id"] == 8
+
+
+def test_resume_config_contract_ignores_only_valid_page_rows():
+    from train.checkpoint import _resume_config_contract
+
+    contract = make_contract()
+    contract["algorithm_config"] = {
+        **contract["algorithm_config"],
+        "execution_layout": {"version": 2, "kind": "paged_interleaved_games", "page_rows": 64},
+    }
+    same = copy.deepcopy(contract)
+    same["algorithm_config"]["execution_layout"]["page_rows"] = 2048
+    assert _resume_config_contract(contract) == _resume_config_contract(same)
+
+    missing = copy.deepcopy(contract)
+    missing["algorithm_config"]["execution_layout"].pop("page_rows")
+    assert _resume_config_contract(missing) != _resume_config_contract(same)
+
+    invalid = copy.deepcopy(contract)
+    invalid["algorithm_config"]["execution_layout"]["page_rows"] = "bad"
+    assert _resume_config_contract(invalid) != _resume_config_contract(same)

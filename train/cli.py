@@ -156,7 +156,8 @@ def _calibration_algorithm_identity(config):
     """Return the algorithm fields that must survive BC-to-online calibration."""
     if not isinstance(config, dict):
         return config
-    return {
+    layout = config.get("execution_layout")
+    identity = {
         key: config.get(key)
         for key in (
             "version",
@@ -174,6 +175,34 @@ def _calibration_algorithm_identity(config):
             "advantage_normalization",
         )
     }
+    identity["execution_layout_version"] = layout.get("version") if isinstance(layout, dict) else None
+    identity["execution_layout_kind"] = layout.get("kind") if isinstance(layout, dict) else None
+    return identity
+
+
+def _check_calibration_report(report, scores, relative):
+    """Reject a report that does not describe one complete final-epoch run."""
+    import math
+
+    best_epoch = report.get("best_epoch")
+    epochs_completed = report.get("epochs_completed")
+    max_epochs = report.get("max_epochs")
+    history = report.get("epoch_heldout_mse")
+    if any(type(value) is not int for value in (best_epoch, epochs_completed, max_epochs)):
+        raise ValueError("invalid calibration epoch provenance")
+    if best_epoch != max_epochs or epochs_completed != max_epochs or max_epochs <= 0:
+        raise ValueError("calibration report is not one complete final-epoch run")
+    if not isinstance(history, (list, tuple)) or len(history) != max_epochs:
+        raise ValueError("calibration history does not cover every epoch")
+    if any(
+        isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0
+        for value in history
+    ):
+        raise ValueError("invalid calibration history")
+    if history[-1] != scores[0]:
+        raise ValueError("calibration best_heldout_mse is not the final epoch")
+    if not (scores[0] < min(scores[1:]) and all(scores[0] < baseline * (1.0 - relative) for baseline in scores[1:])):
+        raise ValueError("calibration did not beat zero and initial Critic")
 
 
 def _checked_calibrated(payload, template, contract, options, actor):
@@ -196,8 +225,10 @@ def _checked_calibrated(payload, template, contract, options, actor):
 
     contract = validate_vrpo_contract(contract)
     fields = ("network_config", "head_config", "critic_config", "reward_config")
-    if contract["network_config"]["architecture"] == "v5":
+    if contract["algorithm_config"].get("reading_auxiliary") is True:
         fields += ("reading_config",)
+    elif payload.get("reading_config") is not None:
+        raise ValueError("calibrated artifact has reading_config for a non-reading algorithm")
     for name in fields:
         _equal_contract(payload.get(name), contract[name], "calibrated artifact contract mismatch: " + name)
     if _calibration_algorithm_identity(payload.get("algorithm_config")) != _calibration_algorithm_identity(
@@ -228,8 +259,7 @@ def _checked_calibrated(payload, template, contract, options, actor):
     relative = report.get("min_relative_improvement")
     if isinstance(relative, bool) or not isinstance(relative, (int, float)) or not math.isfinite(relative):
         raise ValueError("invalid calibration relative-improvement threshold")
-    if not (scores[0] < min(scores[1:]) and all(scores[0] < baseline * (1.0 - relative) for baseline in scores[1:])):
-        raise ValueError("calibration did not beat zero and initial Critic")
+    _check_calibration_report(report, scores, relative)
     params = checked_parameters(payload.get("params"), template.params)
     if actor_sha256(phase_params(params, "actor")) != actor_sha256(actor):
         raise ValueError("calibrated Actor differs from original BC")
@@ -325,11 +355,11 @@ def run_online(options, source_config, *, mode, artifact, sha256):
             raise ValueError("boundary lacks accepted original-BC calibration lineage")
         state, rng, progress, lineage = candidate.state, candidate.rng, candidate.progress, candidate.lineage
     del payload
-    from train.configs import default_reward_config, rule_spec
+    from train.configs import rule_spec
 
     eval_env = rule_spec("sanma").make_env(
         "half",
-        reward_config=default_reward_config("sanma"),
+        reward_config=contract["reward_config"],
         round_end="confirm",
     )
     baseline_params = evaluation.load_baseline_params(
