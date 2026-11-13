@@ -18,7 +18,6 @@ from networks.mahjong_3p.feature import (
     GLOBAL_INDEX,
     MELD_SLICE,
     PLAYER_SLICE,
-    SELF_KAN_OFFSET,
     ObservationTokenizer,
     canonicalize_tile_axis,
     compact_to_canonical34,
@@ -100,7 +99,7 @@ def test_layout_dynamic_width_batch_and_mask(bundle):
 def test_compact_red_and_both_ukeire_axes_use_canonical34():
     np.testing.assert_array_equal(compact_to_canonical34(jnp.arange(27)), COMPACT_TO_CANONICAL)
     np.testing.assert_array_equal(
-        local_tile_to_canonical(jnp.array([-1, 0, 1, 6, 15, 27, 28, 29, 30])), [-1, 0, 8, 13, 22, -1, 13, 22, -1]
+        local_tile_to_canonical(jnp.array([-1, 0, 1, 6, 15, 27, 28, 29, 30])), [-1, 0, 8, 13, 22, 4, 13, 22, -1]
     )
     values = jnp.zeros((27, 27)).at[6, 15].set(4)
     canonical = canonicalize_tile_axis(canonicalize_tile_axis(values), axis=0)
@@ -117,7 +116,7 @@ def test_mixed_history_semantics_red_source_and_temporal_positions():
             jnp.array(
                 [
                     [1, 2, 2, 0, 0, 1, 2],
-                    [28, Action.PON_RED, 6, SELF_KAN_OFFSET + 15, Action.KITA, Action.RIICHI, 29],
+                    [35, Action.PON_RED, 13, 59, Action.KITA, Action.RIICHI, 36],
                     [0, -1, 1, -1, -1, -1, 0],
                 ],
                 jnp.int8,

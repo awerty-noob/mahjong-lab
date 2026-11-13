@@ -258,7 +258,6 @@ def calibrate_q(network, config, state, rng, train_batch, heldout_batch, *, trai
         initial_mse = _heldout_mse(updater, state.params, heldout_batch, heldout_targets, heldout_lengths, config)
         report.update(zero_baseline_mse=zero_mse, initial_critic_mse=initial_mse, best_heldout_mse=initial_mse)
         calibration, _, _ = create_training_state(state.params, config)
-        best_params, best_mse = state.params, initial_mse
         for epoch in range(1, config.calibration_max_epochs + 1):
             rng, shuffle = jax.random.split(rng)
             order = np.asarray(jax.random.permutation(shuffle, len(train_lengths)))  # game metadata
@@ -287,9 +286,12 @@ def calibrate_q(network, config, state, rng, train_batch, heldout_batch, *, trai
             mse = _heldout_mse(updater, calibration.params, heldout_batch, heldout_targets, heldout_lengths, config)
             report["epochs_completed"] = epoch
             report["epoch_heldout_mse"].append(mse)
-            if mse < best_mse:
-                best_params, best_mse = calibration.params, mse
-                report.update(best_epoch=epoch, best_heldout_mse=mse)
+        # Select a pre-registered final epoch instead of taking the minimum over
+        # the same held-out set used for acceptance.  The latter is optimistically
+        # biased and makes the zero/initial comparisons look better than they are.
+        best_params = calibration.params
+        best_mse = report["epoch_heldout_mse"][-1]
+        report.update(best_epoch=config.calibration_max_epochs, best_heldout_mse=best_mse)
         report["actor_sha256_after"] = actor_parameter_fingerprint(calibration.params)
         if report["actor_sha256_after"] != report["actor_sha256_before"]:
             raise ValueError("original BC Actor fingerprint changed")
@@ -493,9 +495,12 @@ def calibrate_paged_q(network, config, state, rng, train_batch, heldout_batch, *
             mse = _paged_heldout_mse(updater, calibration.params, heldout_batch, heldout_targets)
             report["epochs_completed"] = epoch
             report["epoch_heldout_mse"].append(mse)
-            if mse < best_mse:
-                best_params, best_mse = calibration.params, mse
-                report.update(best_epoch=epoch, best_heldout_mse=mse)
+        # Select a pre-registered final epoch instead of taking the minimum over
+        # the same held-out set used for acceptance.  The latter is optimistically
+        # biased and makes the zero/initial comparisons look better than they are.
+        best_params = calibration.params
+        best_mse = report["epoch_heldout_mse"][-1]
+        report.update(best_epoch=config.calibration_max_epochs, best_heldout_mse=best_mse)
         report["actor_sha256_after"] = actor_parameter_fingerprint(calibration.params)
         if report["actor_sha256_after"] != report["actor_sha256_before"]:
             raise ValueError("original BC Actor fingerprint changed")

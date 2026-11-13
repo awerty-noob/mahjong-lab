@@ -150,6 +150,37 @@ def _candidate_ukeire(
     )
 
 
+def raw_tile_to_canonical(tile):
+    """Decode a simulator tile id (canonical 0..33, red 34..36) to canonical."""
+    tile = jnp.asarray(tile, jnp.int32)
+    canonical = jnp.where(tile == 34, 4, jnp.where(tile == 35, 13, jnp.where(tile == 36, 22, tile)))
+    return jnp.where((tile >= 0) & (tile < 37), canonical, -1)
+
+
+def raw_action_to_canonical(action):
+    """Decode a simulator action id to its canonical-34 tile, or -1.
+
+    Simulator discards are 0..33 plus red 34/35/36; self-kan actions are
+    37..70.  Network action ids must never be passed here.
+    """
+    action = jnp.asarray(action, jnp.int32)
+    discard = jnp.where(action < 34, action, jnp.where(action == 34, 4, jnp.where(action == 35, 13, 22)))
+    selfkan = jnp.where((action >= 37) & (action < 71), action - 37, -1)
+    return jnp.where(
+        (action >= 0) & (action < 34), discard, jnp.where((action >= 34) & (action < 37), discard, selfkan)
+    )
+
+
+def raw_action_is_red(action):
+    action = jnp.asarray(action, jnp.int32)
+    return (action >= 34) & (action <= 36)
+
+
+def raw_action_is_selfkan(action):
+    action = jnp.asarray(action, jnp.int32)
+    return (action >= 37) & (action < 71)
+
+
 def _history_features(obs: Dict) -> Dict:
     history = obs["action_history"]
     player, action, tsumogiri = history.astype(jnp.int32)
@@ -163,10 +194,9 @@ def _history_features(obs: Dict) -> Dict:
     overflow = jnp.asarray(obs.get("history_overflow", False), dtype=jnp.bool_)
     complete = contiguous & ~overflow & jnp.asarray(obs.get("public_history_complete", ~valid[-1]), dtype=jnp.bool_)
     discard = valid & (tsumogiri >= 0) & (action >= 0) & (action < NUM_TILE_TYPES_WITH_RED)
-    # 3p history records compact local ids (0..26) plus the red-five ids 27..29.
-    # Fold those onto the canonical 34 axis before scattering so the compact
-    # take below keeps the actual tile type.
-    tile = local_tile_to_canonical(action)
+    # History stores simulator action ids: canonical discards 0..36 and
+    # self-kan 37..70.  Decode raw ids before scattering on the canonical axis.
+    tile = raw_action_to_canonical(action)
     safe_tile = jnp.where(discard, tile, 0)
     seats = jnp.arange(NUM_PLAYERS)[:, None]
     own = (player[None, :] == seats) & discard[None, :]
@@ -184,7 +214,12 @@ def _history_features(obs: Dict) -> Dict:
         axis=1,
     )
     declared = declaration_index < history.shape[1]
-    declaration_tile = action[jnp.minimum(declaration_index, history.shape[1] - 1)]
+    # Public fields consume compact scalar ids, matching last_draw/target.
+    # Map the raw discard action directly so red fives land on 27/28/29 rather
+    # than on the ordinary compact type.
+    from .network import canonical_action_to_compact
+
+    declaration_tile = canonical_action_to_compact(action[jnp.minimum(declaration_index, history.shape[1] - 1)])
     later = discard[None, :] & (ix[None, :] > declaration_index[:, None]) & declared[:, None]
     post_counts = jax.vmap(
         lambda mask: jnp.zeros(NUM_TILE_TYPES, dtype=jnp.int16).at[safe_tile].add(mask.astype(jnp.int16))
@@ -275,14 +310,18 @@ def augment_observation(base_obs: Dict, legal_action_mask: Array) -> Dict:
     obs = dict(base_obs)
     hand = obs["hand"]
     mask = jnp.asarray(legal_action_mask, dtype=jnp.bool_)
-    # Compact slots 0..26 are tile types in the 27-slot ABI; 27/28/29 are the
-    # red-five actions, which fold onto 1m (unreachable), 5p and 5s.
-    slot_types = jnp.asarray((*range(27), 0, 6, 15), jnp.int32)
+    # Discard actions 0..26 are compact types; 27/28/29 are red 5m/5p/5s and
+    # fold onto compact types 4?/6/15.  Red 5m is not a legal sanma type.
+    slot_types = jnp.asarray((*range(27), -1, 6, 15), jnp.int32)
     discard_actions = mask[:30]
-    legal_types = jnp.zeros(27, dtype=jnp.bool_).at[slot_types].max(discard_actions)
+    valid_slots = slot_types >= 0
+    legal_types = (
+        jnp.zeros(27, dtype=jnp.bool_).at[jnp.where(valid_slots, slot_types, 0)].max(discard_actions & valid_slots)
+    )
     draw = jnp.asarray(obs["last_draw"], dtype=jnp.int32)
-    draw_valid = (draw >= 0) & (draw < 27)
-    draw_type = jnp.where(draw_valid, draw, 0)
+    draw_types = jnp.asarray((*range(27), -1, 6, 15), jnp.int32)
+    draw_valid = (draw >= 0) & (draw < 30) & (draw != 27)
+    draw_type = jnp.where(draw_valid, jnp.take(draw_types, jnp.clip(draw, 0, 29)), 0)
     legal_types = legal_types.at[draw_type].set(legal_types[draw_type] | (mask[Action.TSUMOGIRI] & draw_valid))
     valid = obs["is_discard_node"] & legal_types & (hand > 0)
     shanten = jnp.where(valid, jnp.min(obs["discard_shanten"], axis=1), -1).astype(jnp.int8)
@@ -299,8 +338,9 @@ def augment_observation(base_obs: Dict, legal_action_mask: Array) -> Dict:
         }
     )
     indicators = jnp.asarray(obs["dora_indicators"], dtype=jnp.int32)
-    revealed = (indicators >= 0) & (indicators < 27)
-    indicator_compact = jnp.where(revealed, indicators, 0)
+    indicator_types = jnp.asarray((*range(27), -1, 6, 15), jnp.int32)
+    revealed = (indicators >= 0) & (indicators < 30) & (indicators != 27)
+    indicator_compact = jnp.where(revealed, jnp.take(indicator_types, jnp.clip(indicators, 0, 29)), 0)
     dora_compact = jnp.asarray(COMPACT_DORA, jnp.int32)
     obs["dora_count"] = jnp.zeros(27, dtype=jnp.int8).at[dora_compact[indicator_compact]].add(revealed.astype(jnp.int8))
     obs.update(_history_features(obs))
@@ -419,9 +459,10 @@ def local_tile_to_canonical(ids):
     """
     ids = jnp.asarray(ids, jnp.int32)
     canonical = compact_to_canonical34(jnp.clip(ids, 0, 26))
+    canonical = jnp.where(ids == 27, 4, canonical)
     canonical = jnp.where(ids == 28, 13, canonical)
     canonical = jnp.where(ids == 29, 22, canonical)
-    return jnp.where((ids >= 0) & (ids < 30) & (ids != 27), canonical, -1)
+    return jnp.where((ids >= 0) & (ids < 30), canonical, -1)
 
 
 def canonicalize_tile_axis(values, *, axis=-1, fill=0):
@@ -513,9 +554,9 @@ def decode_public_events(obs):
     valid = (actor >= 0) & (actor < 3) & (action >= 0) & (action <= Action.KITA)
     # Declined calls/ron are private decisions, never public event tokens.
     valid &= action != Action.PASS
-    discard = valid & (tsumogiri >= 0) & (tsumogiri <= 1) & (local_tile_to_canonical(action) >= 0)
+    discard = valid & (tsumogiri >= 0) & (tsumogiri <= 1) & (action < 37)
     raw = valid & (tsumogiri == -1)
-    kan = raw & (action >= SELF_KAN_OFFSET) & (action < SELF_KAN_END)
+    kan = raw & raw_action_is_selfkan(action)
     kita = raw & (action == Action.KITA)
     kind = jnp.full_like(action, EVENT_UNKNOWN)
     kind = jnp.where(discard, EVENT_DISCARD, kind)
@@ -534,10 +575,12 @@ def decode_public_events(obs):
         kind = jnp.where(raw & (action == raw_id), event_id, kind)
     tile = jnp.where(
         discard,
-        local_tile_to_canonical(action),
-        jnp.where(kan, compact_to_canonical34(action - SELF_KAN_OFFSET), jnp.where(kita, 30, -1)),
+        raw_action_to_canonical(action),
+        jnp.where(kan, action - 37, jnp.where(kita, 30, -1)),
     )
-    colour = jnp.where(discard, 1 + _is_red_local(action).astype(jnp.int32), jnp.where(kita, RED_ORDINARY, RED_UNKNOWN))
+    colour = jnp.where(
+        discard, 1 + raw_action_is_red(action).astype(jnp.int32), jnp.where(kita, RED_ORDINARY, RED_UNKNOWN)
+    )
     previous_tile = jnp.pad(tile[:, :-1], ((0, 0), (1, 0)), constant_values=-1)
     previous_colour = jnp.pad(colour[:, :-1], ((0, 0), (1, 0)))
     previous_actor = jnp.pad(jnp.where(valid, actor, -1)[:, :-1], ((0, 0), (1, 0)), constant_values=-1)
@@ -1006,9 +1049,9 @@ def build_central_q_input(pre_state, actor_observation, policy_context=None):
     actor observation is raw. Prepared actor data is validated, never re-labelled.
     """
     validate_actor_observation(actor_observation)
-    mask = jnp.asarray(pre_state.legal_action_mask, jnp.bool_)
-    compact_mask = mask[..., :NETWORK_ACTION_COUNT]
-    compact_mask = compact_mask.at[..., 78].set(mask[..., Action.KITA])
+    from .network import compact_legal_mask
+
+    compact_mask = compact_legal_mask(pre_state.legal_action_mask)
     observation = prepare_observation(
         actor_observation,
         legal_action_mask=compact_mask,

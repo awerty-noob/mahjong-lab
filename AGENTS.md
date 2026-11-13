@@ -58,7 +58,7 @@ JAX_PLATFORMS=cpu .venv/bin/python -m pytest -q
 | `mahjax/mahjong_3p/observation.py` | `_observe_dict`，原始观测 |
 | `mahjax/common/hand.py` | `Hand.to_34`，红五折叠 |
 | `networks/mahjong_3p/feature.py` | `prepare_observation`、V3 公共特征、tokenizer、compact/canonical 映射 |
-| `networks/mahjong_3p/network.py` | **模拟器 ↔ 网络唯一转换层**：`compact_observation`、`compact_legal_mask`、`to_simulator_action`、`observe_for_network`、`build_from_checkpoint` |
+| `networks/mahjong_3p/network.py` | **模拟器 ↔ 网络唯一转换层**：`canonical_tile_to_compact`、`compact_tile_to_canonical`、`canonical_action_to_compact`、`compact_action_to_simulator`；`compact_observation`、`compact_legal_mask`、`to_simulator_action`、`observe_for_network`、`build_from_checkpoint` |
 | `networks/mahjong_3p/transformer.py` | `ActorCriticNet`、`CentralQNet`、`TransformerEncoder`、`ReadingHead` |
 | `train/selfplay.py` | BC 加载、collector、execution block、checkpoint artifact 写出 |
 | `train/calibration.py` | Q calibration、接受门槛、actor fingerprint |
@@ -89,7 +89,8 @@ JAX_PLATFORMS=cpu .venv/bin/python -m pytest -q
   - 观测：`compact_observation(raw)`；
   - mask：`compact_legal_mask(env_mask)`；
   - 动作：`to_simulator_action(network_action)`。
-- 不要在 `networks/` 或 `train/` 的其他位置重新实现这三件事，也不要把 88 动作 mask 直接传给网络。
+- 标量牌 id 与动作 id 的逐项映射由 `network.py` 的显式函数完成：`canonical_tile_to_compact`、`compact_tile_to_canonical`、`canonical_action_to_compact`、`compact_action_to_simulator`。`compact_observation`/`compact_legal_mask` 只调用这些函数，不在输入函数里内联另一套映射。
+- 不要在 `networks/` 或 `train/` 的其他位置重新实现映射，也不要把 88 动作 mask 直接传给网络。
 - `build_central_q_input(pre_state, actor_observation)` 要求传入 **已 compact/prepared 的 actor observation**，不是原始 `_observe_dict` 输出。
 
 ### 5.3 红五映射
@@ -97,8 +98,9 @@ JAX_PLATFORMS=cpu .venv/bin/python -m pytest -q
 ```text
 local 28 (red 5p) -> canonical 13 -> compact 6
 local 29 (red 5s) -> canonical 22 -> compact 15
-local 27 (red 5m) -> invalid (-1)
-full 34/35/36     -> compact 4/6/15
+raw local 27 (red 5m) -> invalid (-1)
+full red 34/35/36 -> compact 27/28/29
+compact 27 (red 5m) -> canonical 4
 ```
 
 任何新增的观测字段、meld 处理或 action 统计都必须复用这套映射；直接用 `Tile.is_tile_red` 或 canonical-34 索引处理三人麻将本地 id 会产生静默错位。
@@ -196,7 +198,7 @@ JAX_PLATFORMS=cpu .venv/bin/python -m pytest -q \
   tests/train/test_calibration.py
 ```
 
-- 修改公开行为或 ABI 后，在提交前跑全量测试。最近一次全量基线是 `782 passed, 1 skipped, 21 subtests passed`。
+- 修改公开行为或 ABI 后，在提交前跑全量测试。最近一次全量基线是 `811 passed, 1 skipped, 21 subtests passed`。
 - 测试中的 JAX/NumPy 数值断言优先用 `jnp.allclose` / 明确 tolerance，不要依赖精确浮点相等。
 
 ## 9. 当前已知限制

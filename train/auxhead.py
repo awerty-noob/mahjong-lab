@@ -286,12 +286,15 @@ def build_reading_targets(pre_state):
             income = ((raw + 99) // 100 * 100).astype(jnp.float32) / POINTS_SCALE
             return legal, jnp.where(legal, income, 0)
 
+        exists = jnp.asarray(CANONICAL_TILE_EXISTS)
+        waits = waits & exists
         danger, points = _score_wait_candidates(waits & legal_context, candidate_ron)
+        danger = danger & exists
+        points = jnp.where(exists, points, 0)
 
         def canonical(x):
             return x  # already canonical-34
 
-        exists = jnp.asarray(CANONICAL_TILE_EXISTS)
         danger_valid = exists & valid & danger_context
         waits_valid = exists & valid & tenpai
         return (

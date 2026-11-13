@@ -111,7 +111,8 @@ def _run_focal_pass(
         rewards = next_state.rewards
         rows = jnp.arange(n)
         focal_reward = rewards[rows, focal]
-        won = hand_end & (jnp.sum(rewards > 0, axis=-1) > 0)
+        # Tenpai exhaustive-draw payments are +20/-10/-10, not a win.
+        won = hand_end & next_state.players.has_won.any(axis=-1)
         n_negative = jnp.sum(rewards < 0, axis=-1)
         ron = won & (n_negative == 1)
         focal_win = won & (focal_reward > 0)
@@ -269,25 +270,49 @@ def run_dual_evaluation(
     }
 
 
-def load_baseline_params(options, env, state):
-    """Resolve the online baseline, keeping only Actor roots for inference."""
+def load_baseline_params(options, env, state, *, sample_state=None, contract=None, default_params=None):
+    """Resolve the online baseline, keeping only Actor roots for inference.
+
+    ``state`` is the online training state (parameters/optimizer), not an
+    environment state.  A small sample state is used solely to instantiate the
+    checkpoint's observation schema.
+    """
     if options.baseline_model is None:
-        return state.params
+        return state.params if default_params is None else default_params
     from train.selfplay import _bc_actor, load_verified, load_vrpo_actor
 
     checkpoint = load_verified(options.baseline_model, options.baseline_sha256)
-    observation = tokenize_state(env, state)
+    if contract is not None:
+        from train.continuation import _equal_contract
+
+        for name in ("network_config", "head_config", "reading_config"):
+            if name in checkpoint:
+                _equal_contract(checkpoint.get(name), contract[name], "baseline checkpoint contract mismatch: " + name)
+    if sample_state is None:
+        sample_state = env.init(jax.random.PRNGKey(0))
+    observation = tokenize_state(env, sample_state)
     if checkpoint.get("checkpoint_kind") == "bc":
         actor, _, _ = _bc_actor(
             checkpoint,
             observation,
-            reading_auxiliary=options.algorithm.reading_auxiliary,
+            reading_auxiliary=checkpoint.get("reading_config") is not None,
         )
     else:
         _, actor = load_vrpo_actor(checkpoint, observation)
     merged = dict(state.params["params"])
     merged.update(actor["params"])
     return {"params": merged}
+
+
+def baseline_identity(options):
+    """Stable provenance for the evaluation baseline."""
+    if options.baseline_model is None:
+        return {"source": "bc", "sha256": options.bc_sha256}
+    return {
+        "source": "checkpoint",
+        "path": str(options.baseline_model),
+        "sha256": options.baseline_sha256,
+    }
 
 
 def _iter_training_scalars(row, prefix=""):
@@ -325,7 +350,7 @@ def write_tensorboard(output, update, result):
     if not result.get("valid"):
         return False
     try:
-        root = Path(output) / "tensorboard"
+        root = Path(output)
         for name in ("learner", "baseline"):
             values = [
                 (key, value)
@@ -342,7 +367,7 @@ def write_training_tensorboard(output, update, row):
     """Best-effort ``train/*`` scalars for the online learner run."""
     try:
         values = list(_iter_training_scalars(row))
-        _write_scalars(Path(output) / "tensorboard" / "learner", update, "train", values)
+        _write_scalars(Path(output) / "learner", update, "train", values)
     except Exception:
         return False
     return True

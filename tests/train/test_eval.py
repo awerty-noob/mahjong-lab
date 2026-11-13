@@ -1,9 +1,13 @@
 """Unit and small real-environment contracts for ``train.eval``."""
 
+import hashlib
+import pickle
+
 import jax
 import numpy as np
 import pytest
 
+from networks.mahjong_3p.configs import DEFAULT_READING_CONFIG
 from networks.mahjong_3p.network import build_actor, tokenize_state
 from train import eval as evaluation
 from train.configs import default_reward_config, rule_spec, tiny_debug_preset
@@ -136,7 +140,7 @@ def test_training_tensorboard_flattens_nested_metrics(monkeypatch, tmp_path):
     }
 
     assert evaluation.write_training_tensorboard(tmp_path, 3, row) is True
-    assert captured["directory"] == tmp_path / "tensorboard" / "learner"
+    assert captured["directory"] == tmp_path / "learner"
     assert captured["step"] == 3
     assert captured["prefix"] == "train"
     assert captured["values"] == {
@@ -178,3 +182,41 @@ def test_dual_evaluation_smoke():
         assert result[view]["valid"] is True
         assert result[view]["games"] == 1
         assert set(result[view]) == {"valid", "games", "hands", *evaluation.METRIC_KEYS}
+
+
+def test_explicit_baseline_checkpoint_loads_from_a_real_env(tmp_path):
+    tiny = {"architecture": "v5", "num_layers": 1, "d_model": 8, "num_heads": 2, "mlp_dim": 16}
+    head = {"version": 1, "hidden_dim": 8}
+    env = rule_spec("sanma").make_env("half", reward_config=default_reward_config("sanma"))
+    state = env.init(jax.random.PRNGKey(0))
+    observation = tokenize_state(env, state)
+    model = build_actor(tiny, head_config=head)
+    params = model.init(jax.random.PRNGKey(1), observation, method=model.get_action_logits)
+    payload = {
+        "schema_version": 1,
+        "checkpoint_kind": "bc",
+        "kind": "bc",
+        "env_name": "sanma",
+        "round_mode": "half",
+        "ruleset": "riichienv-standard-sanma",
+        "network_config": tiny,
+        "head_config": head,
+        "reading_config": dict(DEFAULT_READING_CONFIG),
+        "params": params,
+        "critic_trained": False,
+    }
+    data = pickle.dumps(payload)
+    path = tmp_path / "bc.pkl"
+    path.write_bytes(data)
+    options = type("Options", (), {"baseline_model": str(path), "baseline_sha256": hashlib.sha256(data).hexdigest()})()
+    online = type("State", (), {"params": params})()
+    loaded = evaluation.load_baseline_params(
+        options,
+        env,
+        online,
+        sample_state=state,
+        contract={"network_config": tiny, "head_config": head, "reading_config": dict(DEFAULT_READING_CONFIG)},
+    )
+    assert set(loaded["params"]) == {"policy_extractor", "policy_mlp"}
+    assert evaluation.baseline_identity(options)["source"] == "checkpoint"
+    assert evaluation.baseline_identity(options)["sha256"] == options.baseline_sha256

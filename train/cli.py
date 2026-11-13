@@ -10,6 +10,8 @@ import argparse
 import json
 from pathlib import Path
 
+from train import eval as evaluation
+
 
 def _json_object(pairs):
     result = {}
@@ -155,7 +157,22 @@ def _calibration_algorithm_identity(config):
     if not isinstance(config, dict):
         return config
     return {
-        key: config.get(key) for key in ("version", "kind", "optimizer", "gamma", "trace_lambda", "reading_auxiliary")
+        key: config.get(key)
+        for key in (
+            "version",
+            "kind",
+            "optimizer",
+            "gamma",
+            "trace_lambda",
+            "reading_auxiliary",
+            "payoff_seats",
+            "critic_targets",
+            "actor_reduction",
+            "critic_reduction",
+            "trace_clock",
+            "reading_protocol",
+            "advantage_normalization",
+        )
     }
 
 
@@ -180,14 +197,14 @@ def _checked_calibrated(payload, template, contract, options, actor):
     contract = validate_vrpo_contract(contract)
     fields = ("network_config", "head_config", "critic_config", "reward_config")
     if contract["network_config"]["architecture"] == "v5":
-        fields += ("reading_config", "optimizer_config")
+        fields += ("reading_config",)
     for name in fields:
         _equal_contract(payload.get(name), contract[name], "calibrated artifact contract mismatch: " + name)
     if _calibration_algorithm_identity(payload.get("algorithm_config")) != _calibration_algorithm_identity(
         contract["algorithm_config"]
     ):
         raise ValueError("calibrated artifact contract mismatch: algorithm_config")
-    if not isinstance(payload.get("source_versions"), dict):
+    if not isinstance(payload.get("source_versions"), dict) or not payload["source_versions"]:
         raise ValueError("calibrated artifact is missing source_versions provenance")
     for name, expected in contract["environment_config"].items():
         if payload.get(name) != expected:
@@ -208,7 +225,9 @@ def _checked_calibrated(payload, template, contract, options, actor):
     scores = [report.get(name) for name in ("best_heldout_mse", "zero_baseline_mse", "initial_critic_mse")]
     if any(isinstance(x, bool) or not isinstance(x, (int, float)) or not math.isfinite(x) or x < 0 for x in scores):
         raise ValueError("invalid calibration acceptance metrics")
-    relative = options.algorithm.calibration_min_relative_improvement
+    relative = report.get("min_relative_improvement")
+    if isinstance(relative, bool) or not isinstance(relative, (int, float)) or not math.isfinite(relative):
+        raise ValueError("invalid calibration relative-improvement threshold")
     if not (scores[0] < min(scores[1:]) and all(scores[0] < baseline * (1.0 - relative) for baseline in scores[1:])):
         raise ValueError("calibration did not beat zero and initial Critic")
     params = checked_parameters(payload.get("params"), template.params)
@@ -267,11 +286,13 @@ def run_online(options, source_config, *, mode, artifact, sha256):
     collection_state = initial_collection_state()
     progress = {"completed_updates": 0, "envsteps": 0, "schedule_iteration": 0}
     reference_state = _reference_state(options, actor)
+    baseline = evaluation.baseline_identity(options)
     lineage = {
         "bc_source_sha256": options.bc_sha256,
         "origin": "accepted_bc_q_calibration",
         "calibrated_source_sha256": sha256,
         "fresh_optimizer_slots": True,
+        "baseline": baseline,
     }
     if mode == "train":
         state = _checked_calibrated(payload, state, contract, options, actor)
@@ -285,10 +306,18 @@ def run_online(options, source_config, *, mode, artifact, sha256):
         origin = candidate.lineage
         source = origin.get("calibrated_source_sha256")
         if (
-            set(origin) != {"bc_source_sha256", "origin", "calibrated_source_sha256", "fresh_optimizer_slots"}
+            set(origin)
+            != {
+                "bc_source_sha256",
+                "origin",
+                "calibrated_source_sha256",
+                "fresh_optimizer_slots",
+                "baseline",
+            }
             or origin.get("bc_source_sha256") != options.bc_sha256
             or origin.get("origin") != "accepted_bc_q_calibration"
             or origin.get("fresh_optimizer_slots") is not True
+            or origin.get("baseline") != baseline
             or not isinstance(source, str)
             or len(source) != 64
             or any(x not in "0123456789abcdef" for x in source)
@@ -296,7 +325,6 @@ def run_online(options, source_config, *, mode, artifact, sha256):
             raise ValueError("boundary lacks accepted original-BC calibration lineage")
         state, rng, progress, lineage = candidate.state, candidate.rng, candidate.progress, candidate.lineage
     del payload
-    from train import eval as evaluation
     from train.configs import default_reward_config, rule_spec
 
     eval_env = rule_spec("sanma").make_env(
@@ -304,7 +332,14 @@ def run_online(options, source_config, *, mode, artifact, sha256):
         reward_config=default_reward_config("sanma"),
         round_end="confirm",
     )
-    baseline_params = evaluation.load_baseline_params(options, eval_env, state)
+    baseline_params = evaluation.load_baseline_params(
+        options,
+        eval_env,
+        state,
+        sample_state=eval_env.init(jax.random.PRNGKey(0)),
+        contract=contract,
+        default_params=actor,
+    )
     output = _new_output(options, source_config, mode=mode, artifact=artifact, sha256=sha256)
     tensorboard_root = _tensorboard_root(options, output)
     collector = CompleteGameCollector(env, model, options)
@@ -363,8 +398,10 @@ def run_online(options, source_config, *, mode, artifact, sha256):
                 sort_keys=True,
             ),
         )
-        publish(state, rng, progress, collection_state)  # initial online boundary, AFTER accepted calibration
         with _metrics_output_path(options, output).open("x", encoding="utf-8") as metrics:
+            # Create the metrics destination before the initial boundary.  A
+            # metrics-path error must not leave a published half-started run.
+            publish(state, rng, progress, collection_state)
             while (
                 not actor_stalled
                 and not stopped()
@@ -517,9 +554,7 @@ def main(argv=None):
     if args.metrics_path is not None:
         options = replace(options, metrics_path=args.metrics_path)
     if args.mode == "profile":
-        from train.vrpo_profile import run_profile
-
-        report = run_profile(options, source, max_seconds=args.profile_max_seconds or 1800)
+        parser.error("profile mode is not implemented; use calibrate/train/resume")
     else:
         report = (
             run_calibration(options, source)

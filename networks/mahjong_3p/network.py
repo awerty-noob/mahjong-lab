@@ -26,7 +26,6 @@ from .configs import (
     checkpoint_critic_config,
     checkpoint_head_config,
     checkpoint_network_config,
-    checkpoint_reading_config,
     validate_critic_config,
     validate_head_config,
     validate_network_config,
@@ -49,17 +48,56 @@ NORTH_LOCAL_ID = COMPACT_TO_CANONICAL.index(30)
 _CANONICAL_TO_COMPACT = np.full(NUM_CANONICAL_TILES, -1, np.int32)
 for _compact, _canonical in enumerate(COMPACT_TO_CANONICAL):
     _CANONICAL_TO_COMPACT[_canonical] = _compact
-# The 3p simulator uses three local red ids (27/28/29) on top of its 27
-# compact tile types; the full 37-slot ABI uses 34/35/36.  Both fold onto the
-# same black type.  Local id 27 is the red 5m, which sanma never deals.
-_LOCAL_TO_COMPACT = np.full(Tile.NUM_TILE_TYPE_WITH_RED, -1, np.int32)
-for _local in range(27):
-    _LOCAL_TO_COMPACT[_local] = _CANONICAL_TO_COMPACT[COMPACT_TO_CANONICAL[_local]]
-_LOCAL_TO_COMPACT[28] = _CANONICAL_TO_COMPACT[13]
-_LOCAL_TO_COMPACT[29] = _CANONICAL_TO_COMPACT[22]
-_LOCAL_TO_COMPACT[34] = _CANONICAL_TO_COMPACT[4]
-_LOCAL_TO_COMPACT[35] = _CANONICAL_TO_COMPACT[13]
-_LOCAL_TO_COMPACT[36] = _CANONICAL_TO_COMPACT[22]
+
+# The simulator has a canonical-34 tile axis plus red ids 34/35/36.  The
+# network has a compact-27 tile axis plus red action slots 27/28/29.  These
+# tables are deliberately the ONLY knowledge of both schemas.
+_RAW_TILE_TO_COMPACT = np.full(Tile.NUM_TILE_TYPE_WITH_RED, -1, np.int32)
+for _canonical in range(NUM_CANONICAL_TILES):
+    _RAW_TILE_TO_COMPACT[_canonical] = _CANONICAL_TO_COMPACT[_canonical]
+_RAW_TILE_TO_COMPACT[34] = 27
+_RAW_TILE_TO_COMPACT[35] = 28
+_RAW_TILE_TO_COMPACT[36] = 29
+
+_COMPACT_TILE_TO_CANONICAL = np.full(30, -1, np.int32)
+for _compact in range(NUM_COMPACT_TILES):
+    _COMPACT_TILE_TO_CANONICAL[_compact] = COMPACT_TO_CANONICAL[_compact]
+_COMPACT_TILE_TO_CANONICAL[27] = 4
+_COMPACT_TILE_TO_CANONICAL[28] = 13
+_COMPACT_TILE_TO_CANONICAL[29] = 22
+
+_RAW_ACTION_TO_NETWORK = np.full(88, -1, np.int32)
+for _canonical in range(NUM_CANONICAL_TILES):
+    _compact = _CANONICAL_TO_COMPACT[_canonical]
+    if _compact >= 0:
+        _RAW_ACTION_TO_NETWORK[_canonical] = _compact
+_RAW_ACTION_TO_NETWORK[34] = 27
+_RAW_ACTION_TO_NETWORK[35] = 28
+_RAW_ACTION_TO_NETWORK[36] = 29
+for _canonical in range(NUM_CANONICAL_TILES):
+    _compact = _CANONICAL_TO_COMPACT[_canonical]
+    if _compact >= 0:
+        _RAW_ACTION_TO_NETWORK[37 + _canonical] = 30 + _compact
+for _action in range(71, 87):
+    _RAW_ACTION_TO_NETWORK[_action] = _action
+# Raw 78 is CHI_L in the simulator; network 78 is KITA.  It is never legal in
+# sanma, but must not collide with the north slot.
+_RAW_ACTION_TO_NETWORK[78] = -1
+_RAW_ACTION_TO_NETWORK[87] = 78
+
+_NETWORK_ACTION_TO_RAW = np.full(87, -1, np.int32)
+for _compact in range(NUM_COMPACT_TILES):
+    _NETWORK_ACTION_TO_RAW[_compact] = COMPACT_TO_CANONICAL[_compact]
+_NETWORK_ACTION_TO_RAW[27] = 34
+_NETWORK_ACTION_TO_RAW[28] = 35
+_NETWORK_ACTION_TO_RAW[29] = 36
+for _compact in range(NUM_COMPACT_TILES):
+    _NETWORK_ACTION_TO_RAW[30 + _compact] = 37 + COMPACT_TO_CANONICAL[_compact]
+for _action in range(71, 78):
+    _NETWORK_ACTION_TO_RAW[_action] = _action
+_NETWORK_ACTION_TO_RAW[78] = 87
+for _action in range(79, 87):
+    _NETWORK_ACTION_TO_RAW[_action] = _action
 
 
 def compact_tile_axis(values, *, axis: int = -1) -> jax.Array:
@@ -67,12 +105,45 @@ def compact_tile_axis(values, *, axis: int = -1) -> jax.Array:
     return jnp.take(values, jnp.asarray(COMPACT_TO_CANONICAL, jnp.int32), axis=axis % jnp.ndim(values))
 
 
-def compact_local_ids(values) -> jax.Array:
-    """Map a scalar red-aware tile id (or -1) to a compact local id (or -1)."""
+def canonical_tile_to_compact(values) -> jax.Array:
+    """Map simulator tile ids (canonical 0..33, red 34..36) to compact ids.
+
+    The returned red ladder is 27/28/29 for red 5m/5p/5s.  This is a scalar
+    tile-id mapping; tile axes are converted with :func:`compact_tile_axis`.
+    """
     ids = jnp.asarray(values, jnp.int32)
     safe = jnp.clip(ids, 0, Tile.NUM_TILE_TYPE_WITH_RED - 1)
-    mapped = jnp.asarray(_LOCAL_TO_COMPACT)[safe]
-    return jnp.where(ids >= 0, mapped, -1).astype(jnp.int32)
+    mapped = jnp.asarray(_RAW_TILE_TO_COMPACT)[safe]
+    return jnp.where((ids >= 0) & (ids < Tile.NUM_TILE_TYPE_WITH_RED), mapped, -1).astype(jnp.int32)
+
+
+def compact_tile_to_canonical(values) -> jax.Array:
+    """Inverse scalar mapping from compact observation ids to canonical types."""
+    ids = jnp.asarray(values, jnp.int32)
+    safe = jnp.clip(ids, 0, 29)
+    mapped = jnp.asarray(_COMPACT_TILE_TO_CANONICAL)[safe]
+    return jnp.where((ids >= 0) & (ids < 30), mapped, -1).astype(jnp.int32)
+
+
+def compact_local_ids(values) -> jax.Array:
+    """Backward-compatible alias for :func:`canonical_tile_to_compact`."""
+    return canonical_tile_to_compact(values)
+
+
+def canonical_action_to_compact(actions) -> jax.Array:
+    """Map simulator action ids (0..87) to the 87-action network ABI."""
+    ids = jnp.asarray(actions, jnp.int32)
+    safe = jnp.clip(ids, 0, 87)
+    mapped = jnp.asarray(_RAW_ACTION_TO_NETWORK)[safe]
+    return jnp.where((ids >= 0) & (ids < 88), mapped, -1).astype(jnp.int32)
+
+
+def compact_action_to_simulator(actions) -> jax.Array:
+    """Inverse action mapping; network-only/reserved slots map to -1."""
+    ids = jnp.asarray(actions, jnp.int32)
+    safe = jnp.clip(ids, 0, 86)
+    mapped = jnp.asarray(_NETWORK_ACTION_TO_RAW)[safe]
+    return jnp.where((ids >= 0) & (ids < 87), mapped, -1).astype(jnp.int32)
 
 
 def compact_observation(raw: Mapping[str, Any]) -> dict:
@@ -83,23 +154,27 @@ def compact_observation(raw: Mapping[str, Any]) -> dict:
     observation["tiles_seen"] = compact_tile_axis(raw["tiles_seen"], axis=-1)
     # Set-aside norths are public dead tiles but are no longer in any hand, river,
     # or meld array the simulator's tiles_seen walks.
-    observation["tiles_seen"] = (
-        observation["tiles_seen"].at[NORTH_LOCAL_ID].add(jnp.asarray(raw["kita"], jnp.int8).sum(dtype=jnp.int8))
+    raw_kita = jnp.asarray(raw["kita"], jnp.int8)
+    kita_total = (
+        raw_kita.sum(dtype=jnp.int8) if raw_kita.ndim == 1 else raw_kita.sum(axis=-1, dtype=jnp.int8)[..., None]
     )
+    observation["tiles_seen"] = observation["tiles_seen"].at[NORTH_LOCAL_ID].add(kita_total)
     observation["discard_shanten"] = compact_tile_axis(raw["discard_shanten"], axis=-2)
     observation["discard_can_win"] = compact_tile_axis(compact_tile_axis(raw["discard_can_win"], axis=-2), axis=-1)
-    observation["dora_indicators"] = compact_local_ids(raw["dora_indicators"])
-    observation["last_draw"] = compact_local_ids(raw["last_draw"])
-    observation["target"] = compact_local_ids(raw["target"])
+    observation["dora_indicators"] = canonical_tile_to_compact(raw["dora_indicators"])
+    observation["last_draw"] = canonical_tile_to_compact(raw["last_draw"])
+    observation["target"] = canonical_tile_to_compact(raw["target"])
     melds = jnp.asarray(raw["melds"], jnp.int32)
-    # (channel, seat, slot); channel 1 holds canonical target ids (0xFFFF when empty).
-    observation["melds"] = melds.at[1].set(compact_local_ids(melds[1]))
+    # Channel 0 is the simulator action, channel 1 the canonical target type.
+    melds = melds.at[..., 0].set(canonical_action_to_compact(melds[..., 0]))
+    melds = melds.at[..., 1].set(canonical_tile_to_compact(melds[..., 1]))
+    observation["melds"] = melds
     kita = jnp.asarray(raw["kita"], jnp.int8)
     observation["n_kita"] = kita
     # North ids are identical (there is one north), so only the observer's count
-    # matters for the (4,) set-aside slot vector.
-    own_kita = kita[0].astype(jnp.int32)
-    observation["kita_tiles"] = jnp.where(jnp.arange(4) < own_kita, NORTH_LOCAL_ID, -1).astype(jnp.int8)
+    # matters for the (4,) set-aside slot vector.  Keep this batch-safe.
+    own_kita = kita[..., 0].astype(jnp.int32)
+    observation["kita_tiles"] = jnp.where(jnp.arange(4) < own_kita[..., None], NORTH_LOCAL_ID, -1).astype(jnp.int8)
     observation["absolute_dealer"] = jnp.asarray(raw["seat_wind"] == 0, jnp.int8)
     observation.pop("kita", None)
     observation.pop("can_win", None)
@@ -107,16 +182,26 @@ def compact_observation(raw: Mapping[str, Any]) -> dict:
 
 
 def compact_legal_mask(mask) -> jax.Array:
-    """Translate the simulator's 88-action mask onto the 87-action network ABI."""
+    """Translate an 88-action simulator mask onto the 87-action network ABI.
+
+    Already-compact 87-action masks are passed through, so callers can safely
+    use this function at either side of a prepared-observation boundary.
+    """
     mask = jnp.asarray(mask, jnp.bool_)
-    compact = mask[..., :NEXT_ACTION_SIZE]
-    return compact.at[..., KITA_NETWORK_SLOT].set(mask[..., KITA_SIMULATOR_SLOT])
+    if mask.shape[-1] == NEXT_ACTION_SIZE:
+        return mask
+    if mask.shape[-1] != KITA_SIMULATOR_SLOT + 1:
+        raise ValueError("legal_action_mask must have 87 or 88 actions")
+    mapping = jnp.asarray(_RAW_ACTION_TO_NETWORK)
+    valid = mapping >= 0
+    safe = jnp.where(valid, mapping, 0)
+    compact = jnp.zeros(mask.shape[:-1] + (NEXT_ACTION_SIZE,), jnp.bool_)
+    return compact.at[..., safe].max(mask & valid)
 
 
 def to_simulator_action(action) -> jax.Array:
-    """Translate a network action id back to the simulator's id space."""
-    action = jnp.asarray(action, jnp.int32)
-    return jnp.where(action == KITA_NETWORK_SLOT, KITA_SIMULATOR_SLOT, action)
+    """Translate network action ids back to the simulator's 88-action ABI."""
+    return compact_action_to_simulator(action)
 
 
 def tokenize_state(env, state) -> dict:
@@ -201,7 +286,8 @@ def build_from_checkpoint(checkpoint: Mapping[str, Any]):
     """Choose the exact backbone and heads from root checkpoint provenance."""
     config = checkpoint_network_config(checkpoint)
     heads = checkpoint_head_config(checkpoint)
-    reading = checkpoint_reading_config(checkpoint)
+    # v4 ordinary model artifacts have no reading head; v5 artifacts do.
+    reading = checkpoint["reading_config"] if checkpoint.get("reading_config") is not None else None
     critic = checkpoint_critic_config(checkpoint)
     if critic["kind"] == "central_action_q":
         return build_central_q(config, head_config=heads, critic_config=critic, reading_config=reading)

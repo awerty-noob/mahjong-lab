@@ -663,6 +663,20 @@ class CheckpointStore:
                 is_temp = name.startswith(".")
                 if (is_temp or tx not in self._published) and name in os.listdir(self._dirfd):
                     gc["orphan_paths"].append(str(self.directory / name))
+        # Orphans are unreferenced by any published transaction and are never
+        # read by the loader.  Delete only names this store owns and verified.
+        gc["deleted_orphan_paths"] = []
+        for absolute in list(gc["orphan_paths"]):
+            name = Path(absolute).name
+            if name not in self._owned:
+                continue
+            try:
+                self._unlink_verified(name)
+                gc["deleted_orphan_paths"].append(absolute)
+            except (OSError, CheckpointStoreError) as error:
+                gc["errors"].append(str(error))
+        if gc["deleted_orphan_paths"]:
+            self._fsync_directory()
         gc["kept_pair_updates"] = sorted(self._records[t]["update"] for t in keep)
         gc["archived_model_updates"] = sorted(r["update"] for r in history if r["archived_model"])
 
@@ -998,7 +1012,34 @@ def restore_vrpo_resume(payload, template_state, *, contract):
     if boundary["kind"] != "update_boundary" or boundary["active_batch"] is not False:
         raise ValueError("VRPO restore requires update_boundary with no active batch")
     actual = validate_vrpo_contract(payload["config_contract"])
-    _equal_contract(actual, expected, "config_contract")
+    # Source hashes describe the whole implementation tree.  Refuse missing or
+    # reshaped provenance, and keep exact hashes for the numerical ABI files;
+    # CLI/eval-only edits do not make an otherwise valid boundary unusable.
+    actual_versions = actual.get("source_versions")
+    expected_versions = expected["source_versions"]
+    if not isinstance(actual_versions, dict) or not actual_versions:
+        raise ValueError("resume boundary is missing source_versions provenance")
+    actual_hashes = actual_versions.get("implementation_sha256")
+    expected_hashes = expected_versions.get("implementation_sha256")
+    if isinstance(actual_hashes, dict) and isinstance(expected_hashes, dict):
+        missing = set(expected_hashes) - set(actual_hashes)
+        extra = set(actual_hashes) - set(expected_hashes)
+        if missing:
+            raise ValueError("config_contract mismatch: source_versions missing files")
+        for path in extra:
+            if path.startswith(("mahjax/", "networks/")) or path == "train/selfplay.py":
+                raise ValueError(f"config_contract mismatch: unexpected ABI source {path}")
+        for path, digest in expected_hashes.items():
+            if path.startswith(("mahjax/", "networks/")) or path == "train/selfplay.py":
+                if actual_hashes[path] != digest:
+                    raise ValueError(f"config_contract mismatch: source_versions[{path}]")
+    else:
+        # Synthetic/older contracts without per-file implementation hashes keep
+        # the original strict provenance comparison.
+        _equal_contract(actual_versions, expected_versions, "source_versions")
+    actual_contract = {key: value for key, value in actual.items() if key != "source_versions"}
+    expected_contract = {key: value for key, value in expected.items() if key != "source_versions"}
+    _equal_contract(actual_contract, expected_contract, "config_contract")
     if type(template_state) is not VRPOTrainingState:
         raise ValueError("template_state must be the dynamic-only VRPOTrainingState")
     dynamic = _mapping(payload["train_state"], "train_state", required=_STATE_FIELDS, exact=True)

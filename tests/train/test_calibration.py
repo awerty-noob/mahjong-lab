@@ -139,8 +139,8 @@ def test_fits_finite_mc_heldout_all_raw_seats_and_preserves_actor(calibrated):
     assert equal(before, parts[2])  # input params, both slots AND counters unchanged
     assert equal(phase_params(before.params, "actor"), phase_params(result.state.params, "actor"))
     assert np.isfinite(report["epoch_heldout_mse"]).all()
-    assert report["best_heldout_mse"] == min(report["epoch_heldout_mse"])
-    assert report["best_epoch"] == 1 + np.argmin(report["epoch_heldout_mse"])
+    assert report["best_heldout_mse"] == report["epoch_heldout_mse"][-1]
+    assert report["best_epoch"] == report["max_epochs"]
     with pytest.raises(FrozenInstanceError):
         result.rng = jax.random.key(0)
 
@@ -350,8 +350,8 @@ def test_no_improvement_is_failure_with_strict_zero_threshold():
     train = batch(payoff=(0.0, 0.0, 0.0))
     with pytest.raises(CalibrationFailure) as failure:
         run((net, cfg, state, train, heldout))
-    assert failure.value.report["best_epoch"] == 0
-    assert failure.value.report["best_heldout_mse"] == failure.value.report["initial_critic_mse"]
+    assert failure.value.report["best_epoch"] == failure.value.report["max_epochs"]
+    assert failure.value.report["best_heldout_mse"] == failure.value.report["epoch_heldout_mse"][-1]
 
 
 def test_unvalidated_config_rejected_before_any_calibration():

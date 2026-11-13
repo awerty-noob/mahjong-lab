@@ -34,6 +34,7 @@ from .feature import (
     ObservationTokenizer,
     assemble_central_q_input,
     local_tile_to_canonical,
+    raw_tile_to_canonical,
     token_positions,
     validate_actor_observation,
 )
@@ -375,8 +376,8 @@ class CompactPrivateEncoder(nn.Module):
         # The simulator already stores canonical-34 counts.
         hand_features = _scaled_flat(rotated(privileged["players"]["hand"]))
         deck = _batched(privileged["round_state"]["deck"], batch)
-        canonical = local_tile_to_canonical(deck)
-        red = (deck >= 28) & (deck <= 29)
+        canonical = raw_tile_to_canonical(deck)
+        red = (deck >= 34) & (deck <= 36)
         ids = jnp.where(canonical >= 0, canonical + 1, 0)
         deck_features = nn.Embed(35, 4, name="deck_tile")(ids)
         deck_features += nn.Embed(2, 4, name="deck_red")(red.astype(jnp.int32))

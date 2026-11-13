@@ -40,15 +40,20 @@ V3_KEYS = {
 
 def state_with_hand(tiles=HAND, *, melds=()):
     state = default_state()
-    red_hand = jnp.bincount(jnp.asarray(tiles), length=37).astype(jnp.int8)
+    # ``tiles`` is in the compact 0..29 observation ABI.  The simulator's
+    # hand_with_red and last_draw use canonical 0..33 plus red 34/35/36.
     tile_ids = jnp.asarray(tiles, jnp.int32)
     compact = jnp.asarray(COMPACT_TO_CANONICAL, jnp.int32)
     canonical = compact[jnp.clip(tile_ids, 0, 26)]
     canonical = jnp.where(tile_ids == 27, 4, canonical)
     canonical = jnp.where(tile_ids == 28, 13, canonical)
     canonical = jnp.where(tile_ids == 29, 22, canonical)
+    raw = jnp.where(tile_ids == 27, 34, jnp.where(tile_ids == 28, 35, jnp.where(tile_ids == 29, 36, canonical)))
+    red_hand = jnp.bincount(raw, length=37).astype(jnp.int8)
     hand = jnp.bincount(canonical, length=34).astype(jnp.int8)
-    mask = jnp.zeros(87, dtype=jnp.bool_).at[:30].set(red_hand[:30] > 0)
+    mask = jnp.zeros(87, dtype=jnp.bool_)
+    mask = mask.at[jnp.clip(tile_ids, 0, 26)].set(hand[canonical] > 0)
+    mask = mask.at[27].set(red_hand[34] > 0).at[28].set(red_hand[35] > 0).at[29].set(red_hand[36] > 0)
     meld_words = state.players.melds
     for i, word in enumerate(melds):
         meld_words = meld_words.at[0, i].set(word)
@@ -60,7 +65,7 @@ def state_with_hand(tiles=HAND, *, melds=()):
             melds=meld_words,
             meld_counts=state.players.meld_counts.at[0].set(len(melds)),
         ),
-        round_state=state.round_state.replace(last_draw=jnp.int8(tiles[-1])),
+        round_state=state.round_state.replace(last_draw=jnp.int8(raw[-1])),
     )
 
 
@@ -184,7 +189,7 @@ def test_red_only_discard_tsumogiri_and_legality_fold_to_compact_type():
     np.testing.assert_array_equal(red["candidate_ukeire"][6], normal["candidate_ukeire"][6])
     drawn_red = state.replace(
         legal_action_mask=jnp.zeros(87, dtype=jnp.bool_).at[Action.TSUMOGIRI].set(True),
-        round_state=state.round_state.replace(last_draw=jnp.int8(28)),
+        round_state=state.round_state.replace(last_draw=jnp.int8(35)),
     )
     np.testing.assert_array_equal(np.flatnonzero(augmented(drawn_red)["candidate_valid"]), [6])
     assert int(red["candidate_shanten"][0]) == -1  # held, but not a legal action
@@ -225,14 +230,14 @@ def test_public_indicators_use_sanma_cycles_red_folding_and_multiplicity():
 def test_declaration_uses_following_red_discard_not_riichi_action_and_counts_only_discards():
     events = [
         (1, 20, 0),
-        (2, 6, 0),
+        (2, 13, 0),
         (1, Action.RIICHI, -1),
-        (1, 28, 1),
+        (1, 35, 1),
         (2, Action.PON, -1),
-        (2, 7, 0),
+        (2, 14, 0),
         (0, Action.KITA, -1),
-        (0, 23, 0),
-        (1, 29, 1),
+        (0, 27, 0),
+        (1, 22, 1),
     ]
     state = with_history(state_with_hand(), events, riichi=(False, True, False))
     obs = augmented(state)
@@ -243,8 +248,9 @@ def test_declaration_uses_following_red_discard_not_riichi_action_and_counts_onl
     assert int(obs["discard_counts"][1, 15]) == 1
     assert int(obs["post_riichi_discard_counts"][1, 6]) == 0
     assert int(obs["post_riichi_discard_counts"][1, 15]) == 1
-    assert int(obs["discard_counts"][0, 23]) == 1  # KITA itself is not a discard
-    assert bool(obs["genbutsu"][1, 20])  # pre-riichi own river
+    assert int(obs["discard_counts"][0, 23]) == 0  # KITA itself is not a discard
+    assert int(obs["discard_counts"][0, 20]) == 1  # East discard
+    assert bool(obs["genbutsu"][1, 13])  # pre-riichi own river
     assert bool(obs["genbutsu"][1, 7])
     assert bool(obs["genbutsu"][1, 6])  # own declaration is safe
     # Old discards by a different seat, before the declaration, are not safe.
@@ -261,31 +267,31 @@ def test_riichi_action_alone_and_unaccepted_or_ronned_declaration_do_not_add_saf
     assert int(obs["riichi_declaration_tile"][1]) == -1
     assert int(obs["riichi_declaration_index"][1]) == -1
     assert int(obs["riichi_elapsed"][1]) == -1
-    events = [(1, Action.RIICHI, -1), (1, 28, 0), (2, 13, 0)]
+    events = [(1, Action.RIICHI, -1), (1, 35, 0), (2, 22, 0)]
     unaccepted = augmented(with_history(state, events))
     assert int(unaccepted["riichi_declaration_tile"][1]) == 28
     assert bool(unaccepted["genbutsu"][1, 6])
-    assert not bool(unaccepted["genbutsu"][1, 13])
+    assert not bool(unaccepted["genbutsu"][1, 15])
     ronned = augmented(with_history(state, events + [(0, Action.RON, -1)]))
-    assert not bool(ronned["genbutsu"][1, 13])
+    assert not bool(ronned["genbutsu"][1, 15])
 
 
 def test_pending_response_tile_is_not_yet_genbutsu_but_post_call_and_next_draw_are():
-    events = [(1, Action.RIICHI, -1), (1, 20, 0), (2, 13, 0)]
+    events = [(1, Action.RIICHI, -1), (1, 20, 0), (2, 22, 0)]
     state = with_history(state_with_hand(), events, riichi=(False, True, False))
     response = state.replace(legal_action_mask=jnp.zeros(87, dtype=jnp.bool_).at[Action.RON].set(True))
     pending = augmented(response)
-    assert not bool(pending["genbutsu"][1, 13])
+    assert not bool(pending["genbutsu"][1, 15])
     # The next discard node proves all response opportunities were resolved.
-    assert bool(augmented(state)["genbutsu"][1, 13])
+    assert bool(augmented(state)["genbutsu"][1, 15])
     # A following public call likewise resolves the discard's ron window.
     called = with_history(response, events + [(0, Action.PON, -1)], riichi=(False, True, False))
-    assert bool(augmented(called)["genbutsu"][1, 13])
+    assert bool(augmented(called)["genbutsu"][1, 15])
 
 
 def test_live_history_writer_keeps_riichi_and_tsumogiri_separate_with_red_id():
     state = state_with_hand([2, 3, 4, 5, 28, 7, 8, 9, 10, 11, 12, 15, 15, 0])
-    state = state.replace(round_state=state.round_state.replace(last_draw=jnp.int8(28)))
+    state = state.replace(round_state=state.round_state.replace(last_draw=jnp.int8(35)))
     append = jax.jit(_append_action_history)
     state = append(state, jnp.int32(Action.RIICHI))
     assert int(augmented(state)["riichi_declaration_tile"][0]) == -1
@@ -297,7 +303,7 @@ def test_live_history_writer_keeps_riichi_and_tsumogiri_separate_with_red_id():
 
 
 def test_history_overflow_is_explicit_unknown_and_legacy_full_buffers_are_conservative():
-    state = with_history(state_with_hand(), [(1, Action.RIICHI, -1), (1, 28, 0)])
+    state = with_history(state_with_hand(), [(1, Action.RIICHI, -1), (1, 35, 0)])
     state = state.replace(round_state=state.round_state.replace(history_overflow=jnp.bool_(True)))
     obs = augmented(state)
     assert not bool(obs["public_history_complete"])
