@@ -4,6 +4,7 @@ import hashlib
 import pickle
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
@@ -63,6 +64,42 @@ def test_metric_schema_and_reducer_units():
     assert summary["damaten_rate"] == 0.5
     assert summary["avg_turn"] == 10.0
     assert set(summary) == {"valid", "games", "hands", *evaluation.METRIC_KEYS}
+
+
+def test_duplicate_discard_actions_merge_probability_mass():
+    probabilities = jnp.zeros((4, 87), dtype=jnp.float32)
+    probabilities = probabilities.at[0, 6].set(0.2)
+    probabilities = probabilities.at[0, 71].set(0.5)
+    probabilities = probabilities.at[0, 20].set(0.3)
+    # Red 5p (28) and normal 5p (6) must stay separate; red 5p merges with
+    # TSUMOGIRI only.
+    probabilities = probabilities.at[1, 6].set(0.2)
+    probabilities = probabilities.at[1, 28].set(0.3)
+    probabilities = probabilities.at[1, 71].set(0.1)
+    probabilities = probabilities.at[1, 20].set(0.35)
+    probabilities = probabilities.at[2, 0].set(0.6)
+    probabilities = probabilities.at[2, 71].set(0.4)
+    # Merged mass (0.6) must beat the largest raw option (0.4).
+    probabilities = probabilities.at[3, 6].set(0.3)
+    probabilities = probabilities.at[3, 71].set(0.3)
+    probabilities = probabilities.at[3, 20].set(0.4)
+    legal = jnp.ones((4, 87), dtype=jnp.bool_)
+    legal = legal.at[2, 71].set(False)
+
+    merged, chosen = evaluation._merge_duplicate_action_probabilities(probabilities, legal, jnp.asarray([6, 28, -1, 6]))
+
+    assert float(merged[0, 71]) == pytest.approx(0.7)
+    assert bool(jnp.isneginf(merged[0, 6]))
+    assert int(chosen[0]) == 71
+    assert float(merged[1, 6]) == pytest.approx(0.2)
+    assert float(merged[1, 71]) == pytest.approx(0.4)
+    assert bool(jnp.isneginf(merged[1, 28]))
+    assert int(chosen[1]) == 71
+    assert bool(jnp.isneginf(merged[2, 71]))
+    assert int(chosen[2]) == 0
+    assert float(merged[3, 71]) == pytest.approx(0.6)
+    assert int(chosen[3]) == 71
+    assert bool(jnp.all(legal[jnp.arange(4), chosen]))
 
 
 def test_invalid_pass_has_null_metrics():

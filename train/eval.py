@@ -26,6 +26,49 @@ from networks.mahjong_3p.network import (
 )
 from train.configs import settlement_components
 
+
+def _merge_duplicate_action_probabilities(probabilities, legal_mask, last_draw):
+    """Sum probability mass for actions that discard the same physical tile.
+
+    Network actions 0..26 are normal discards and 27..29 are red-five
+    discards.  ``TSUMOGIRI`` (71) is the same physical tile as the compact
+    slot in ``last_draw``.  The simulator exposes both slots when the drawn
+    tile has another copy in hand, so greedy evaluation must merge every
+    duplicate group before selecting an action, not just pick one of the two
+    slots.  Non-discard actions are unique and keep their own group.
+    """
+    batch = probabilities.shape[0]
+    probabilities = jnp.where(legal_mask, probabilities, 0.0)
+    actions = jnp.arange(probabilities.shape[1], dtype=jnp.int32)
+    rows = jnp.arange(batch, dtype=jnp.int32)
+    last_draw = jnp.asarray(last_draw, dtype=jnp.int32)
+    slot = jnp.clip(last_draw, 0, 29)
+
+    is_discard = actions < 30
+    key = jnp.where(is_discard, actions + 1, 100 + actions)
+    key = jnp.broadcast_to(key, (batch, actions.shape[0]))
+    tsumogiri_key = jnp.where(
+        (last_draw >= 0)[:, None],
+        last_draw[:, None] + 1,
+        100 + Action.TSUMOGIRI,
+    )
+    key = jnp.where(actions[None, :] == Action.TSUMOGIRI, tsumogiri_key, key)
+
+    bins = jnp.zeros((batch, 200), dtype=probabilities.dtype)
+    bins = bins.at[rows[:, None], key].add(probabilities)
+    grouped = jnp.take_along_axis(bins, key, axis=1)
+
+    tsumogiri_legal = legal_mask[:, Action.TSUMOGIRI]
+    duplicate_slot = (
+        (last_draw >= 0)[:, None] & is_discard[None, :] & (actions[None, :] == slot[:, None]) & tsumogiri_legal[:, None]
+    )
+    representative = (actions[None, :] != Action.TSUMOGIRI) | tsumogiri_legal[:, None]
+    merged = jnp.where(duplicate_slot, -jnp.inf, grouped)
+    merged = jnp.where(representative, merged, -jnp.inf)
+    merged = jnp.where(legal_mask, merged, -jnp.inf)
+    return merged, jnp.argmax(merged, axis=-1)
+
+
 METRIC_KEYS = (
     "avg_rank",
     "avg_rank_pt",
@@ -103,7 +146,8 @@ def _run_focal_pass(
         opponent_logits = logits(opponent_params, observation)
         logits_now = jnp.where((state.current_player == focal)[:, None], learner_logits, opponent_logits)
         mask = jax.vmap(lambda s: compact_legal_mask(s.legal_action_mask))(state)
-        chosen = jnp.argmax(jnp.where(mask, logits_now, -jnp.inf), axis=-1)
+        probabilities = jax.nn.softmax(jnp.where(mask, logits_now, -jnp.inf), axis=-1)
+        probabilities, chosen = _merge_duplicate_action_probabilities(probabilities, mask, observation["last_draw"])
         split = jax.vmap(lambda k: jax.random.split(k, 2))(carry["keys"])
         next_keys, step_keys = split[:, 0], split[:, 1]
         next_state = step_all(state, to_simulator_action(chosen), step_keys)
